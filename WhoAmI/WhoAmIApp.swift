@@ -6,12 +6,16 @@
 //
 
 import SwiftUI
+import Supabase
 
 @main
 struct WhoAmIApp: App {
+    @StateObject private var authManager = AuthManager(supabase: Config.supabaseClient)
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(authManager)
         }
     }
 }

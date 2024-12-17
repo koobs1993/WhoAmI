@@ -1,24 +1,27 @@
-//
-//  ContentView.swift
-//  WhoAmI
-//
-//  Created by Kyle Kelley on 12/15/24.
-//
-
 import SwiftUI
+import Supabase
 
 struct ContentView: View {
+    @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var reviewManager: ReviewPromptManager
+    @State private var showingNotificationPrompt = false
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        Group {
+            if authManager.isAuthenticated {
+                MainTabView(supabase: Config.supabaseClient)
+                    .onAppear {
+                        reviewManager.incrementActionCount()
+                    }
+            } else {
+                AuthView(supabase: Config.supabaseClient)
+            }
         }
-        .padding()
     }
 }
 
 #Preview {
     ContentView()
-}
+        .environmentObject(AuthManager(supabase: Config.supabaseClient))
+        .environmentObject(ReviewPromptManager())
+} 

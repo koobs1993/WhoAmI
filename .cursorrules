@@ -1,0 +1,145 @@
+
+Cursor Rules File
+
+1. General Principles
+	•	Follow the latest Swift and SwiftUI coding standards (Swift 5.9+).
+	•	Use modular, clean, and readable code with clear documentation.
+	•	Prioritize code reusability, scalability, and performance optimization.
+	•	Ensure the solution adheres to Apple’s Human Interface Guidelines (HIG).
+	•	Utilize Swift Package Manager (SPM) over CocoaPods or Carthage whenever possible.
+	•	All code must be type-safe and avoid force unwrapping (!) unless explicitly justified.
+
+2. Project Setup
+	•	Xcode Version: Use the latest stable Xcode release.
+	•	Swift Package Manager: Set up dependencies through SPM.
+	•	App Architecture:
+	•	Use MVVM (Model-View-ViewModel) or Composable Architecture.
+	•	For small apps, MVVM suffices; for large-scale apps, consider TCA.
+	•	Environment Configuration:
+	•	Manage API keys and configurations via .xcconfig files.
+	•	Use a Config struct or environment variables to access these values.
+
+3. SwiftUI Development
+	•	Build UIs declaratively with SwiftUI.
+	•	Use @State, @StateObject, @ObservedObject, and @EnvironmentObject appropriately.
+	•	Prefer LazyVStack, LazyHStack, or LazyGrid for dynamic content rendering.
+	•	Extract reusable UI components into modular Views.
+	•	Avoid view reloads by using @Binding and @Published carefully.
+	•	Use ViewModifiers to encapsulate reusable styling and behaviors.
+
+Example View:
+
+struct CustomButton: View {
+    let title: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.white)
+                .padding()
+                .background(Color.blue)
+                .cornerRadius(8)
+        }
+    }
+}
+
+4. Supabase Integration
+	•	Use the official Supabase Swift SDK for database and authentication.
+	•	Organize Supabase logic into separate service classes or managers.
+	•	Use asynchronous code with async/await to interact with Supabase APIs.
+	•	Handle authentication securely:
+	•	Store access tokens securely using Keychain.
+	•	Refresh tokens when they expire.
+	•	Structure database queries clearly and efficiently.
+
+Example Supabase Service:
+
+import Supabase
+import Foundation
+
+class SupabaseService: ObservableObject {
+    private let client = SupabaseClient(supabaseURL: URL(string: "https://your-project-url.supabase.co")!,
+                                       supabaseKey: "public-anon-key")
+    
+    // Fetch data example
+    func fetchProfiles() async throws -> [Profile] {
+        let response = try await client
+            .from("profiles")
+            .select()
+            .execute()
+        
+        let profiles = try response.decoded(to: [Profile].self)
+        return profiles
+    }
+}
+
+5. Swift Conventions
+	•	Use structured concurrency (async/await) for modern and clean asynchronous code.
+	•	Use Codable for serialization and deserialization.
+	•	Write unit tests and use mocking to test Supabase API calls.
+
+Example Codable Model:
+
+struct Profile: Codable, Identifiable {
+    let id: UUID
+    let username: String
+    let bio: String?
+    let createdAt: Date
+}
+
+6. Error Handling
+	•	Handle errors gracefully with do-catch and custom error types.
+	•	Avoid generic catch { } blocks without proper logging.
+	•	Use Result or Swift’s async/await error propagation for APIs.
+
+Example:
+
+enum SupabaseError: Error {
+    case fetchFailed(String)
+}
+
+func loadProfiles() async {
+    do {
+        let profiles = try await supabaseService.fetchProfiles()
+        print(profiles)
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+7. Best Practices for Xcode
+	•	Follow code organization:
+	•	Create folders like Views, ViewModels, Models, Services, Extensions.
+	•	Enable Xcode features:
+	•	SwiftLint for linting.
+	•	Code Coverage tools for testing.
+	•	Optimize the Build Settings for release builds:
+	•	Turn on Whole Module Optimization (WMO).
+	•	Strip symbols in release builds.
+
+8. Testing
+	•	Use XCTest for unit and UI testing.
+	•	Ensure test coverage for Supabase calls, view models, and utility functions.
+	•	Use mocks and dependency injection to isolate tests.
+
+Example Test:
+
+import XCTest
+@testable import YourApp
+
+class SupabaseServiceTests: XCTestCase {
+    func testFetchProfiles() async throws {
+        let service = SupabaseService()
+        let profiles = try await service.fetchProfiles()
+        
+        XCTAssertGreaterThan(profiles.count, 0, "Profiles should not be empty")
+    }
+}
+
+9. Optimization
+	•	Minimize view hierarchy depth.
+	•	Optimize network calls to Supabase using batching and caching strategies.
+	•	Profile performance with Xcode Instruments for bottlenecks.
+	•	Ensure accessibility compliance (accessibilityLabel, accessibilityHint).
