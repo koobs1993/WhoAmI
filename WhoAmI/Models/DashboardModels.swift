@@ -1,8 +1,5 @@
 import Foundation
 
-// Enums to match database types
-// CourseStatus and TestStatus are now imported from SharedModels
-
 // Weekly Column Model for Dashboard
 struct DashboardWeeklyColumn: Identifiable, Codable {
     let id: Int
@@ -89,7 +86,7 @@ struct DashboardUserCourse: Identifiable, Codable {
     let courseId: Int
     let startDate: Date?
     let completionDate: Date?
-    let status: CourseStatus
+    let status: WhoAmI.CourseStatus
     let lastAccessed: Date?
     let createdAt: Date
     let updatedAt: Date
@@ -115,7 +112,7 @@ struct DashboardUserTest: Identifiable, Codable {
     let lastQuestionId: Int?
     let startTime: Date?
     let completionTime: Date?
-    let status: TestStatus
+    let status: WhoAmI.TestStatus
     let testResults: [String: String]?
     let createdAt: Date
     let updatedAt: Date
@@ -136,14 +133,30 @@ struct DashboardUserTest: Identifiable, Codable {
 
 struct CourseData: Codable {
     let course: DashboardCourse
-    let progress: CourseProgress?
+    let progressData: ProgressData?
     
     enum CodingKeys: String, CodingKey {
         case course
-        case progress
+        case progressData = "progress"
+    }
+}
+
+struct ProgressData: Codable {
+    let completedLessons: Int
+    let totalLessons: Int
+    let lastAccessed: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case completedLessons = "completed_lessons"
+        case totalLessons = "total_lessons"
+        case lastAccessed = "last_accessed"
+    }
+    
+    var progressPercentage: Double {
+        guard totalLessons > 0 else { return 0.0 }
+        return Double(completedLessons) / Double(totalLessons)
     }
 }
 
 // Use the Lesson type from CourseModels
 typealias DashboardLesson = Lesson
- 

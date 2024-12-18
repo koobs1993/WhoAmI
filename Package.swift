@@ -4,8 +4,8 @@ import PackageDescription
 let package = Package(
     name: "WhoAmI",
     platforms: [
-        .iOS(.v17),
-        .macOS(.v14)
+        .iOS(.v15),
+        .macOS(.v12)
     ],
     products: [
         .library(
@@ -13,7 +13,7 @@ let package = Package(
             targets: ["WhoAmI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/supabase-community/supabase-swift.git", from: "0.3.0"),
+        .package(url: "https://github.com/supabase-community/supabase-swift.git", from: "1.0.0"),
         .package(url: "https://github.com/SDWebImage/SDWebImageSwiftUI.git", from: "2.2.6")
     ],
     targets: [

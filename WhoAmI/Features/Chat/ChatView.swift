@@ -1,154 +1,75 @@
 import SwiftUI
 import Supabase
 
+@available(macOS 13.0, iOS 16.0, *)
 struct ChatView: View {
-    @StateObject var viewModel: ChatViewModel
-    let channelId: UUID
-    @State private var message = ""
+    @StateObject private var viewModel: ChatViewModel
+    @EnvironmentObject private var authManager: AuthManager
+    @Environment(\.dismiss) private var dismiss
     
-    init(supabase: SupabaseClient, channelId: UUID, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: ChatViewModel(supabase: supabase, userId: userId))
-        self.channelId = channelId
+    init(chatService: ChatService) {
+        _viewModel = StateObject(wrappedValue: ChatViewModel(chatService: chatService))
     }
-    
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                MessageScrollView(viewModel: viewModel)
-                    .onChange(of: viewModel.typingUsers.isEmpty) { isEmpty in
-                        if !isEmpty {
-                            withAnimation {
-                                proxy.scrollTo("typing", anchor: .bottom)
-                            }
-                        }
-                    }
-                
-                if !viewModel.typingUsers.isEmpty {
-                    TypingIndicatorView(typingUsers: viewModel.typingUsers)
-                        .id("typingIndicator")
-                }
-            }
-        }
-        
-        MessageInputView(viewModel: viewModel, channelId: channelId)
-    }
-}
-
-private struct ChatContentView: View {
-    @ObservedObject var viewModel: ChatViewModel
-    let channelId: UUID
     
     var body: some View {
         VStack {
-            MessagesView(viewModel: viewModel)
-            MessageInputView(viewModel: viewModel, channelId: channelId)
-        }
-    }
-}
-
-private struct MessagesView: View {
-    @ObservedObject var viewModel: ChatViewModel
-    
-    var body: some View {
-        MessageScrollView(viewModel: viewModel)
-    }
-}
-
-private struct MessageScrollView: View {
-    @ObservedObject var viewModel: ChatViewModel
-    
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                MessageList(viewModel: viewModel)
-                    .onChange(of: viewModel.messages.count) { _, _ in
-                        scrollToLastMessage(proxy: proxy)
+            if viewModel.isLoading {
+                ChatLoadingView()
+            } else if let error = viewModel.error {
+                ChatErrorView(error: error) {
+                    Task {
+                        await viewModel.retryFetch()
                     }
-                    .onChange(of: viewModel.typingUsers.isEmpty) { _, _ in
-                        scrollToTypingIndicator(proxy: proxy)
+                }
+            } else if viewModel.messages.isEmpty {
+                ChatEmptyView()
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(viewModel.messages) { message in
+                                ChatBubble(
+                                    message: message,
+                                    isCurrentUser: message.userId == authManager.currentUser?.id
+                                )
+                                .id(message.id)
+                            }
+                        }
+                        .padding()
                     }
-            }
-        }
-    }
-    
-    private func scrollToLastMessage(proxy: ScrollViewProxy) {
-        if let lastMessage = viewModel.messages.last {
-            withAnimation {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-            }
-        }
-    }
-    
-    private func scrollToTypingIndicator(proxy: ScrollViewProxy) {
-        if !viewModel.typingUsers.isEmpty {
-            withAnimation {
-                proxy.scrollTo("typingIndicator", anchor: .bottom)
-            }
-        }
-    }
-}
-
-private struct MessageList: View {
-    @ObservedObject var viewModel: ChatViewModel
-    
-    var body: some View {
-        LazyVStack(spacing: 12) {
-            ForEach(viewModel.messages) { message in
-                MessageView(message: message)
-                    .id(message.id)
+                    .onChange(of: viewModel.messages.count) { newCount in
+                        if let lastMessage = viewModel.messages.last {
+                            withAnimation {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
             }
             
-            if !viewModel.typingUsers.isEmpty {
-                TypingIndicatorView(typingUsers: viewModel.typingUsers)
-                    .id("typingIndicator")
+            ChatInputView(message: $viewModel.currentMessage) {
+                Task {
+                    await viewModel.sendMessage(viewModel.currentMessage)
+                }
             }
         }
-        .padding(.vertical)
+        .navigationTitle("Chat")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
-private struct MessageInputView: View {
-    @ObservedObject var viewModel: ChatViewModel
-    let channelId: UUID
-    @State private var messageText = ""
-    
-    var body: some View {
-        MessageInput(
-            text: $messageText,
-            onSend: {
-                Task {
-                    try? await viewModel.sendMessage(messageText, sessionId: channelId)
-                    messageText = ""
-                }
-            },
-            onTyping: { isTyping in
-                Task {
-                    try? await viewModel.updateTypingStatus(isTyping: isTyping, sessionId: channelId)
-                }
-            }
-        )
+#Preview {
+    if #available(iOS 16.0, macOS 13.0, *) {
+        NavigationView {
+            ChatView(chatService: ChatService(
+                supabase: Config.supabaseClient,
+                realtime: Config.supabaseClient.realtime
+            ))
+            .environmentObject(AuthManager(supabase: Config.supabaseClient))
+        }
+    } else {
+        Text("Preview not available")
     }
 }
-
-private struct ChatMessageInput: View {
-    @Binding var text: String
-    let onSend: () -> Void
-    let onTyping: (Bool) -> Void
-    
-    var body: some View {
-        HStack {
-            TextField("Type a message...", text: $text)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .onChange(of: text) { _, newValue in
-                    onTyping(!newValue.isEmpty)
-                }
-            
-            Button(action: onSend) {
-                Image(systemName: "paperplane.fill")
-                    .foregroundColor(text.isEmpty ? .gray : .blue)
-            }
-            .disabled(text.isEmpty)
-        }
-        .padding()
-    }
-} 

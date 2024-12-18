@@ -1,102 +1,70 @@
-#if os(iOS)
-import UIKit
-#elseif os(macOS)
-import AppKit
-#endif
 import SwiftUI
 
 struct TestResultsView: View {
-    let results: [String: Any]
+    let score: Double
+    let totalQuestions: Int
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Success Icon
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.green)
-                    .padding(.top)
-                
-                VStack(spacing: 8) {
-                    Text("Test Completed!")
-                        .font(.title)
-                        .fontWeight(.bold)
-                    
-                    Text("Thank you for completing the test")
-                        .foregroundColor(.secondary)
-                }
-                
-                // Results Summary
-                ResultsSummaryCard(results: results)
-                
-                Button {
+        VStack(spacing: 20) {
+            Text("Test Results")
+                .font(.title)
+                .bold()
+            
+            CircularProgressView(progress: score / 100)
+                .frame(width: 200, height: 200)
+            
+            Text("\(Int(score))%")
+                .font(.system(size: 48, weight: .bold))
+            
+            Text("\(Int(score * Double(totalQuestions) / 100))/\(totalQuestions) Questions Correct")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            
+            Button("Done") {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Back") {
                     dismiss()
-                } label: {
-                    Text("Return to Tests")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(12)
                 }
             }
-            .padding()
+            #else
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Back") {
+                    dismiss()
+                }
+            }
+            #endif
         }
-        .navigationBarBackButtonHidden(true)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(PlatformUtils.systemBackground))
-                .shadow(radius: 5)
-        )
     }
 }
 
-struct ResultsSummaryCard: View {
-    let results: [String: Any]
+struct CircularProgressView: View {
+    let progress: Double
     
     var body: some View {
-        VStack(spacing: 16) {
-            ForEach(Array(results.keys.sorted()), id: \.self) { key in
-                if key != "completion_date" {
-                    HStack {
-                        Text(key.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if let value = results[key] {
-                            if let score = value as? Int {
-                                Text("\(score)")
-                                    .fontWeight(.medium)
-                            } else if let scores = value as? [String: Int] {
-                                Text("\(scores.values.reduce(0, +))")
-                                    .fontWeight(.medium)
-                            } else {
-                                Text("\(String(describing: value))")
-                                    .fontWeight(.medium)
-                            }
-                        }
-                    }
-                }
-            }
+        ZStack {
+            Circle()
+                .stroke(lineWidth: 20)
+                .opacity(0.3)
+                .foregroundColor(.blue)
             
-            if let dateString = results["completion_date"] as? String,
-               let date = ISO8601DateFormatter().date(from: dateString) {
-                Divider()
-                HStack {
-                    Text("Completed")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(date.formatted())
-                        .fontWeight(.medium)
-                }
-            }
+            Circle()
+                .trim(from: 0.0, to: CGFloat(min(progress, 1.0)))
+                .stroke(style: StrokeStyle(lineWidth: 20, lineCap: .round, lineJoin: .round))
+                .foregroundColor(.blue)
+                .rotationEffect(Angle(degrees: 270.0))
+                .animation(.linear, value: progress)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(PlatformUtils.systemBackground))
-                .shadow(radius: 5)
-        )
     }
+}
+
+#Preview {
+    TestResultsView(score: 85, totalQuestions: 10)
 } 

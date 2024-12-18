@@ -1,11 +1,12 @@
 import SwiftUI
 import Supabase
 
+@available(macOS 12.0, *)
 class ChatHistoryViewModel: ObservableObject {
-    @Published private(set) var sessions: [ChatSession] = []
+    @Published var sessions: [ChatSession] = []
+    @Published var currentPage = 1
     @Published var isLoading = false
-    private var currentPage = 0
-    private let pageSize = 20
+    
     private let supabase: SupabaseClient
     private let authManager: AuthManager
     
@@ -16,41 +17,43 @@ class ChatHistoryViewModel: ObservableObject {
     
     @MainActor
     func fetchSessions() async throws {
+        isLoading = true
+        defer { isLoading = false }
+        
         let response: PostgrestResponse<[ChatSession]> = try await supabase.database
             .from("chat_sessions")
             .select()
+            .order("created_at", ascending: false)
+            .limit(20)
+            .range(from: 0, to: 19)
             .execute()
         
-        sessions = try response.value
+        sessions = response.value
         currentPage = 1
     }
     
     @MainActor
-    func clearSessions() async throws {
-        _ = try await supabase.database
+    func loadMoreSessions() async throws {
+        let nextPage = currentPage + 1
+        let offset = (nextPage - 1) * 20
+        
+        let response: PostgrestResponse<[ChatSession]> = try await supabase.database
             .from("chat_sessions")
-            .delete()
-            .execute()
-    }
-    
-    func summarizeSession(sessionId: UUID) async throws -> String {
-        let params = SummarizeParams(sessionId: sessionId.uuidString)
-        let response: PostgrestResponse<String> = try await supabase.database
-            .rpc(fn: "summarize_chat_session", params: params)
+            .select()
+            .order("created_at", ascending: false)
+            .limit(20)
+            .range(from: offset, to: offset + 19)
             .execute()
         
-        return try response.value
+        let newSessions = response.value
+        if !newSessions.isEmpty {
+            currentPage = nextPage
+            sessions.append(contentsOf: newSessions)
+        }
     }
 }
 
-struct SummarizeParams: Encodable {
-    let sessionId: String
-    
-    private enum CodingKeys: String, CodingKey {
-        case sessionId = "session_id"
-    }
-}
-
+@available(macOS 12.0, *)
 struct ChatHistoryView: View {
     @StateObject private var viewModel: ChatHistoryViewModel
     @State private var error: Error?
@@ -80,19 +83,24 @@ struct ChatHistoryView: View {
     }
 }
 
+@available(macOS 12.0, *)
 struct ChatSessionListView: View {
     let sessions: [ChatSession]
     let rowContent: (ChatSession) -> ChatSessionRow
-
+    
+    init(sessions: [ChatSession], @ViewBuilder rowContent: @escaping (ChatSession) -> ChatSessionRow) {
+        self.sessions = sessions
+        self.rowContent = rowContent
+    }
+    
     var body: some View {
-        List {
-            ForEach(sessions) { session in
-                rowContent(session)
-            }
+        List(sessions) { session in
+            rowContent(session)
         }
     }
 }
 
+@available(macOS 12.0, *)
 struct ChatSessionRow: View {
     let session: ChatSession
     
@@ -107,7 +115,12 @@ struct ChatSessionRow: View {
     }
 }
 
-enum ChatError: Error {
-    case invalidResponse
+#if DEBUG
+@available(macOS 12.0, *)
+struct ChatHistoryView_Previews: PreviewProvider {
+    static var previews: some View {
+        ChatHistoryView(supabase: Config.supabaseClient, authManager: AuthManager(supabase: Config.supabaseClient))
+    }
 }
+#endif
  

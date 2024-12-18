@@ -4,7 +4,7 @@ import Supabase
 protocol WeeklyColumnServiceProtocol {
     func fetchColumns() async throws -> [WeeklyColumn]
     func fetchQuestions(for columnId: Int) async throws -> [WeeklyQuestion]
-    func saveResponse(userId: UUID, questionId: Int, response: String) async throws
+    func submitResponse(_ values: WeeklyResponse) async throws
     func saveProgress(userId: UUID, columnId: Int, lastQuestionId: Int, completed: Bool) async throws
     func fetchProgress(userId: UUID) async throws -> [UserWeeklyProgress]
 }
@@ -17,69 +17,58 @@ class WeeklyColumnService: WeeklyColumnServiceProtocol {
     }
     
     func fetchColumns() async throws -> [WeeklyColumn] {
-        let query = supabase.database
+        let response: PostgrestResponse<[WeeklyColumn]> = try await supabase.database
             .from("weeklycolumns")
-            .select(columns: "*")
-            .order(column: "publish_date", ascending: false)
-        
-        let response: PostgrestResponse<[WeeklyColumn]> = try await query.execute()
+            .select("*")
+            .order("publish_date", ascending: false)
+            .execute()
+            
         return response.value
     }
     
     func fetchQuestions(for columnId: Int) async throws -> [WeeklyQuestion] {
-        let query = supabase.database
+        let response: PostgrestResponse<[WeeklyQuestion]> = try await supabase.database
             .from("weeklyquestions")
-            .select(columns: "*")
-            .eq(column: "column_id", value: columnId)
-            .order(column: "sequence_order", ascending: true)
-        
-        let response: PostgrestResponse<[WeeklyQuestion]> = try await query.execute()
+            .select("*")
+            .eq("column_id", value: columnId)
+            .execute()
+            
         return response.value
     }
     
-    func saveResponse(userId: UUID, questionId: Int, response: String) async throws {
-        let values: [String: String] = [
-            "user_id": userId.uuidString,
-            "question_id": String(questionId),
-            "response": response,
-            "created_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
+    func submitResponse(_ values: WeeklyResponse) async throws {
         try await supabase.database
             .from("weeklyresponses")
-            .insert(values: values)
+            .insert(values)
             .execute()
     }
     
     func saveProgress(userId: UUID, columnId: Int, lastQuestionId: Int, completed: Bool) async throws {
-        try await updateProgress(userId: userId, columnId: columnId, completed: completed, completedAt: completed ? Date() : nil)
+        let values = UserWeeklyProgress(
+            id: 0,
+            userId: userId,
+            columnId: columnId,
+            lastQuestionId: lastQuestionId,
+            completed: completed
+        )
+        
+        try await updateProgress(values)
     }
     
     func fetchProgress(userId: UUID) async throws -> [UserWeeklyProgress] {
-        let query = supabase.database
+        let response: PostgrestResponse<[UserWeeklyProgress]> = try await supabase.database
             .from("userweeklyprogress")
-            .select(columns: "*")
-            .eq(column: "user_id", value: userId.uuidString)
-        
-        let response: PostgrestResponse<[UserWeeklyProgress]> = try await query.execute()
+            .select("*")
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+            
         return response.value
     }
     
-    func updateProgress(userId: UUID, columnId: Int, completed: Bool, completedAt: Date? = nil, score: Int? = nil) async throws {
-        let values: [String: String] = [
-            "user_id": userId.uuidString,
-            "column_id": String(columnId),
-            "is_completed": String(completed),
-            "completed_at": completedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
-            "score": score.map(String.init) ?? "",
-            "is_active": "true",
-            "created_at": ISO8601DateFormatter().string(from: Date()),
-            "updated_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
+    func updateProgress(_ values: UserWeeklyProgress) async throws {
         try await supabase.database
             .from("userweeklyprogress")
-            .upsert(values: values)
+            .upsert(values)
             .execute()
     }
 } 

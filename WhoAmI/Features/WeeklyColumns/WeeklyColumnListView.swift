@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct WeeklyColumnListView: View {
-    @StateObject private var viewModel: WeeklyColumnViewModel
+    @ObservedObject private var viewModel: WeeklyColumnViewModel
     
     init(service: WeeklyColumnServiceProtocol, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: WeeklyColumnViewModel(service: service, userId: userId))
+        viewModel = WeeklyColumnViewModel(service: service, userId: userId)
     }
     
     var body: some View {
@@ -56,12 +56,14 @@ struct WeeklyColumnRow: View {
                 .foregroundColor(.secondary)
                 .lineLimit(2)
             
-            Text(column.publishDate, style: .date)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if let date = column.createdAt {
+                Text(date, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             if let progress = progress {
-                ProgressView(value: progress.isCompleted ? 1.0 : 0.0, total: 1.0)
+                ProgressView(value: progress.completed ? 1.0 : 0.0, total: 1.0)
                     .tint(.blue)
             }
         }
@@ -73,5 +75,3 @@ struct WeeklyColumnRow: View {
         )
     }
 }
-
-// Note: ErrorView moved to SharedViews to avoid duplication 

@@ -19,67 +19,63 @@ class DashboardService: BaseService, ObservableObject {
     }
     
     func fetchDashboardItems() async throws -> [DashboardItem] {
-        guard let userId = try? await validateUser() else {
-            throw ServiceError.unauthorized
-        }
-        
-        if let cached: [DashboardItem] = getCachedValue(from: cache, forKey: "dashboard_items") {
-            return cached
-        }
-        
         let response: PostgrestResponse<[DashboardItem]> = try await supabase.database
             .from("dashboard_items")
             .select()
-            .eq(column: "user_id", value: userId.uuidString)
-            .order(column: "created_at", ascending: false)
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false)
             .execute()
         
-        let items = try response.value
+        let items = response.value
         setCachedValue(items, in: cache, forKey: "dashboard_items")
         return items
     }
     
     func fetchWeeklyColumns() async throws -> [WeeklyColumn] {
-        return try await supabase.database
+        let response: PostgrestResponse<[WeeklyColumn]> = try await supabase.database
             .from("weekly_columns")
             .select()
-            .order(column: "publish_date", ascending: false)
-            .limit(count: 5)
+            .order("publish_date", ascending: false)
+            .limit(5)
             .execute()
-            .value
+        
+        return response.value
     }
     
     func fetchRecentActivity() async throws -> [ActivityItem] {
-        return try await supabase.database
+        let response: PostgrestResponse<[ActivityItem]> = try await supabase.database
             .from("user_activity")
             .select()
-            .eq(column: "user_id", value: userId.uuidString)
-            .order(column: "created_at", ascending: false)
-            .limit(count: 10)
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false)
+            .limit(10)
             .execute()
-            .value
+        
+        return response.value
     }
     
     func fetchStats() async throws -> UserStats {
-        return try await supabase.database
+        let response: PostgrestResponse<UserStats> = try await supabase.database
             .from("user_stats")
             .select()
-            .eq(column: "user_id", value: userId.uuidString)
+            .eq("user_id", value: userId.uuidString)
             .single()
             .execute()
-            .value
+        
+        return response.value
     }
     
     func fetchRecommendations() async throws -> [RecommendedItem] {
-        return try await supabase.database
+        let response: PostgrestResponse<[RecommendedItem]> = try await supabase.database
             .from("recommendations")
             .select()
-            .eq(column: "user_id", value: userId.uuidString)
-            .eq(column: "is_active", value: true)
-            .order(column: "priority", ascending: false)
-            .limit(count: 10)
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_active", value: true)
+            .order("priority", ascending: false)
+            .limit(10)
             .execute()
-            .value
+        
+        return response.value
     }
     
     private func invalidateCache() {
@@ -159,4 +155,4 @@ struct RecommendedItem: Codable, Identifiable {
         case isActive = "is_active"
         case createdAt = "created_at"
     }
-} 
+}

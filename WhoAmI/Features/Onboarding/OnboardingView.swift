@@ -3,7 +3,6 @@ import Supabase
 
 struct OnboardingView: View {
     @StateObject private var viewModel: OnboardingViewModel
-    @Environment(\.dismiss) private var dismiss
     
     init(supabase: SupabaseClient) {
         _viewModel = StateObject(wrappedValue: OnboardingViewModel(supabase: supabase))
@@ -28,40 +27,7 @@ struct OnboardingView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Welcome")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: {
-                    #if os(macOS)
-                    return .automatic
-                    #else
-                    return .navigationBarLeading
-                    #endif
-                }()) {
-                    if viewModel.currentStep != .welcome {
-                        Button("Back") {
-                            viewModel.previousStep()
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: {
-                    #if os(macOS)
-                    return .automatic
-                    #else
-                    return .navigationBarTrailing
-                    #endif
-                }()) {
-                    if viewModel.currentStep != .finish {
-                        Button("Next") {
-                            viewModel.nextStep()
-                        }
-                        .disabled(!viewModel.canProceed)
-                    }
-                }
-            }
+            .navigationTitle("Onboarding")
         }
     }
 }
@@ -104,7 +70,6 @@ struct WelcomeStepView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
             }
-            .padding(.horizontal)
         }
         .padding()
     }
@@ -114,29 +79,30 @@ struct PersonalInfoStepView: View {
     @ObservedObject var viewModel: OnboardingViewModel
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Personal Information")
-                .font(.title2)
-                .fontWeight(.bold)
+        VStack(spacing: 16) {
+            TextField("Email", text: $viewModel.email)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
             
-            VStack(spacing: 16) {
-                TextField("First Name", text: $viewModel.firstName)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    #if os(iOS)
-                    .textContentType(.givenName)
-                    .textInputAutocapitalization(.words)
-                    #endif
-                
-                TextField("Last Name", text: $viewModel.lastName)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    #if os(iOS)
-                    .textContentType(.familyName)
-                    .textInputAutocapitalization(.words)
-                    #endif
-                
-                EmailField(email: $viewModel.email)
+            TextField("First Name", text: $viewModel.firstName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            TextField("Last Name", text: $viewModel.lastName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            Picker("Gender", selection: $viewModel.gender) {
+                Text("Select Gender").tag(Optional<Gender>.none)
+                ForEach(Gender.allCases, id: \.self) { gender in
+                    Text(gender.rawValue.capitalized).tag(Optional(gender))
+                }
             }
-            .padding()
+            .pickerStyle(MenuPickerStyle())
+            
+            Picker("Role", selection: $viewModel.role) {
+                ForEach(UserRole.allCases, id: \.self) { role in
+                    Text(role.rawValue.capitalized).tag(role)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
             
             Button {
                 viewModel.nextStep()
@@ -149,7 +115,6 @@ struct PersonalInfoStepView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
             }
-            .padding(.horizontal)
         }
         .padding()
     }
@@ -159,22 +124,14 @@ struct EducationStepView: View {
     @ObservedObject var viewModel: OnboardingViewModel
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Education")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(spacing: 16) {
-                Picker("Education", selection: $viewModel.education) {
-                    Text("Select Education").tag(Optional<Education>.none)
-                    ForEach(Education.allCases, id: \.self) { education in
-                        Text(education.displayText)
-                            .tag(Optional(education))
-                    }
+        VStack(spacing: 16) {
+            Picker("Education", selection: $viewModel.education) {
+                Text("Select Education").tag(Optional<WhoAmI.Education>.none)
+                ForEach(WhoAmI.Education.allCases, id: \.self) { education in
+                    Text(education.rawValue.capitalized).tag(Optional(education))
                 }
-                .pickerStyle(.menu)
             }
-            .padding()
+            .pickerStyle(MenuPickerStyle())
             
             Button {
                 viewModel.nextStep()
@@ -187,7 +144,6 @@ struct EducationStepView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
             }
-            .padding(.horizontal)
         }
         .padding()
     }
@@ -197,16 +153,9 @@ struct LifePlansStepView: View {
     @ObservedObject var viewModel: OnboardingViewModel
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Life Plans")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(spacing: 16) {
-                TextField("Life Plans", text: $viewModel.lifePlans)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-            }
-            .padding()
+        VStack(spacing: 16) {
+            TextField("What are your life plans?", text: $viewModel.lifePlans)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
             
             Button {
                 viewModel.nextStep()
@@ -219,7 +168,6 @@ struct LifePlansStepView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
             }
-            .padding(.horizontal)
         }
         .padding()
     }
@@ -229,19 +177,18 @@ struct FinishStepView: View {
     @ObservedObject var viewModel: OnboardingViewModel
     
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Text("Almost Done!")
-                .font(.title2)
+                .font(.title)
                 .fontWeight(.bold)
             
-            Text("Thank you for providing your information")
+            Text("Thank you for providing your information.")
                 .font(.headline)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
             
             Button {
                 Task {
-                    try? await viewModel.finishOnboarding()
+                    try? await viewModel.createProfile()
                 }
             } label: {
                 Text("Complete")
@@ -252,7 +199,6 @@ struct FinishStepView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
             }
-            .padding(.horizontal)
         }
         .padding()
     }

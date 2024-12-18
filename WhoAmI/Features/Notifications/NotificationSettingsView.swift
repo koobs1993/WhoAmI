@@ -1,65 +1,46 @@
 import SwiftUI
 
 struct NotificationSettingsView: View {
-    @ObservedObject var viewModel: NotificationsViewModel
-    @Environment(\.dismiss) private var dismiss
+    @StateObject var viewModel: NotificationsViewModel
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("General")) {
-                    Toggle("Push Notifications", isOn: $viewModel.deviceSettings.notificationsEnabled)
-                    Toggle("Course Updates", isOn: $viewModel.deviceSettings.courseUpdatesEnabled)
-                }
-                
-                Section(header: Text("Notification Types")) {
-                    Toggle("Test Reminders", isOn: $viewModel.deviceSettings.testRemindersEnabled)
-                    Toggle("Weekly Summaries", isOn: $viewModel.deviceSettings.weeklySummariesEnabled)
-                    Toggle("System Notifications", isOn: $viewModel.deviceSettings.notificationsEnabled)
-                }
-                
-                Section(header: Text("Sound & Haptics")) {
-                    Toggle("Sound", isOn: $viewModel.deviceSettings.soundEnabled)
-                    Toggle("Haptics", isOn: $viewModel.deviceSettings.hapticsEnabled)
-                }
+        Form {
+            Section {
+                Toggle("Enable Notifications", isOn: $viewModel.deviceSettings.notificationsEnabled)
             }
-            .navigationTitle("Notification Settings")
-            #if !os(macOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                #if os(macOS)
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Save") {
-                        Task {
-                            await viewModel.saveSettings()
-                            dismiss()
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+            
+            Section {
+                Toggle("Course Updates", isOn: $viewModel.deviceSettings.courseUpdatesEnabled)
+                    .disabled(!viewModel.deviceSettings.notificationsEnabled)
+                Toggle("Test Reminders", isOn: $viewModel.deviceSettings.testRemindersEnabled)
+                    .disabled(!viewModel.deviceSettings.notificationsEnabled)
+                Toggle("Weekly Summaries", isOn: $viewModel.deviceSettings.weeklySummariesEnabled)
+                    .disabled(!viewModel.deviceSettings.notificationsEnabled)
+            } header: {
+                Text("Notification Types")
+            }
+            
+            Section {
+                Button {
+                    Task {
+                        await viewModel.saveDeviceSettings()
                         dismiss()
                     }
+                } label: {
+                    Text("Save")
                 }
-                #else
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        Task {
-                            await viewModel.saveSettings()
-                            dismiss()
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                #endif
             }
         }
+        .navigationTitle("Notification Settings")
+        .task {
+            await viewModel.loadSettings()
+        }
     }
-} 
+}
+
+#Preview {
+    NavigationView {
+        NotificationSettingsView(viewModel: NotificationsViewModel(supabase: Config.supabaseClient, userId: UUID()))
+    }
+}

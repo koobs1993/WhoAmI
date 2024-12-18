@@ -2,49 +2,22 @@ import Foundation
 import Supabase
 
 class OnboardingService: BaseService {
-    func createProfile(_ profile: UserProfile) async throws {
-        try await supabase.database
-            .from("user_profiles")
-            .insert(values: profile)
-            .execute()
+    override init(supabase: SupabaseClient) {
+        super.init(supabase: supabase)
     }
     
-    func updateProfile(_ profile: UserProfile) async throws {
-        try await supabase.database
-            .from("user_profiles")
-            .update(values: profile)
-            .eq(column: "user_id", value: profile.userId.uuidString)
-            .execute()
-    }
-    
-    func fetchQuestions() async throws -> [OnboardingQuestion] {
-        let response = try await supabase.database
+    func fetchQuestions() async throws -> [WhoAmI.OnboardingQuestion] {
+        let response: PostgrestResponse<[WhoAmI.OnboardingQuestion]> = try await supabase.database
             .from("onboarding_questions")
             .select()
             .execute()
-            
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-        return try decoder.decode([OnboardingQuestion].self, from: data)
+        return response.value
     }
     
-    func saveUserProfile(_ profile: UserResearchProfile) async throws {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let data = try encoder.encode(profile)
-        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-        
-        let encodableDict = dict.mapValues { value -> String in
-            if let v = value as? CustomStringConvertible {
-                return String(describing: v)
-            }
-            return String(describing: value)
-        }
-        
+    func saveUserProfile(_ profile: UserProfile) async throws {
         try await supabase.database
-            .from("user_research_profiles")
-            .upsert(values: encodableDict)
+            .from("user_profiles")
+            .insert(profile)
             .execute()
     }
 } 

@@ -1,78 +1,101 @@
-import Foundation
+import SwiftUI
 import Supabase
-import Realtime
 
 @MainActor
 class ChatViewModel: ObservableObject {
-    private let supabase: SupabaseClient
     private let chatService: ChatService
-    private let userId: UUID
-    private var channel: Channel?
+    private var channel: RealtimeChannel?
     
     @Published var messages: [ChatMessage] = []
+    @Published var currentMessage = ""
     @Published var isLoading = false
     @Published var error: Error?
-    @Published var typingUsers: Set<String> = []
     
-    init(supabase: SupabaseClient, userId: UUID) {
-        self.supabase = supabase
-        self.chatService = ChatService(supabase: supabase, realtime: supabase.realtime)
-        self.userId = userId
+    init(chatService: ChatService) {
+        self.chatService = chatService
+        print("ChatViewModel initialized")
+        Task {
+            await setupChat()
+        }
     }
     
-    func loadMessages(sessionId: UUID) async throws {
-        isLoading = true
-        defer { isLoading = false }
+    private func setupChat() async {
+        await fetchMessages()
+        await connectToRealtimeChannel()
+    }
+    
+    private func connectToRealtimeChannel() async {
+        do {
+            // Ensure we have a valid session before subscribing
+            let session = try await chatService.supabase.auth.session
+            print("Setting up realtime channel with session: \(session.accessToken)")
+            
+            channel = chatService.subscribe("chat_messages") { [weak self] message in
+                Task { @MainActor in
+                    self?.messages.append(message)
+                    // Sort messages by timestamp
+                    self?.messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+                }
+            }
+            
+            print("Successfully subscribed to chat channel")
+        } catch {
+            print("Failed to connect to realtime channel: \(error)")
+            self.error = error
+        }
+    }
+    
+    func sendMessage(_ content: String) async {
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         do {
-            messages = try await chatService.fetchMessages(sessionId: sessionId)
-            subscribeToMessages(sessionId: sessionId)
+            // Get the current user's ID from the session
+            let session = try await chatService.supabase.auth.session
+            let userId = session.user.id
+            
+            let message = ChatMessage(
+                sessionId: UUID(),
+                content: content,
+                role: .user,
+                createdAt: Date(),
+                userId: userId
+            )
+            
+            try await chatService.sendMessage(message)
+            currentMessage = ""
+            print("Message sent successfully")
         } catch {
+            print("Error sending message: \(error)")
             self.error = error
-            throw error
         }
     }
     
-    private func subscribeToMessages(sessionId: UUID) {
-        let topic = "chat_messages:\(sessionId.uuidString)"
-        channel = chatService.subscribe(topic) { [weak self] message in
-            Task { @MainActor in
-                self?.messages.append(message)
-            }
+    private func fetchMessages() async {
+        isLoading = true
+        do {
+            messages = try await chatService.fetchMessages()
+            messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+            print("Fetched \(messages.count) messages")
+        } catch {
+            print("Error fetching messages: \(error)")
+            self.error = error
         }
+        isLoading = false
     }
     
-    func sendMessage(_ content: String, sessionId: UUID) async throws {
-        let message = ChatMessage(
-            id: UUID(),
-            sessionId: sessionId,
-            userId: userId,
-            role: .user,
-            content: content,
-            metadata: nil,
-            createdAt: Date()
-        )
-        
-        try await chatService.sendMessage(message)
-    }
-    
-    func updateTypingStatus(isTyping: Bool, sessionId: UUID) async throws {
-        if isTyping {
-            typingUsers.insert(sessionId.uuidString)
-        } else {
-            typingUsers.remove(sessionId.uuidString)
-        }
-    }
-    
-    func cleanup() async {
+    func retryFetch() async {
+        error = nil
         if let channel = channel {
             chatService.unsubscribe(channel)
         }
+        channel = nil
+        await setupChat()
     }
     
     deinit {
-        Task { @MainActor [weak self] in
-            await self?.cleanup()
+        if let channel = channel {
+            chatService.unsubscribe(channel)
         }
+        print("ChatViewModel deinitialized")
     }
-} 
+}

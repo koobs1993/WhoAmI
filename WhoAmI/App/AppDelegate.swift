@@ -54,6 +54,55 @@ class AppDelegate: NSObject, UIApplicationDelegate, AppDelegateProtocol {
         return true
     }
     
+    func application(_ app: UIApplication,
+                    open url: URL,
+                    options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // Handle the authentication callback URL
+        if url.scheme == "whoami" && url.host == "app.whoami" && url.path.contains("/auth/callback") {
+            Task {
+                do {
+                    // Extract and handle auth parameters
+                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                       let queryItems = components.queryItems {
+                        
+                        // Handle different auth scenarios
+                        if let accessToken = queryItems.first(where: { $0.name == "access_token" })?.value,
+                           let refreshToken = queryItems.first(where: { $0.name == "refresh_token" })?.value {
+                            // Handle tokens
+                            print("Received tokens")
+                            try await supabase.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
+                        } else if let type = queryItems.first(where: { $0.name == "type" })?.value {
+                            // Handle different auth types (signup, recovery, etc.)
+                            switch type {
+                            case "signup":
+                                print("Email verification completed")
+                                NotificationCenter.default.post(
+                                    name: .emailVerificationCompleted,
+                                    object: nil
+                                )
+                            case "recovery":
+                                print("Password reset completed")
+                                NotificationCenter.default.post(
+                                    name: .passwordResetCompleted,
+                                    object: nil
+                                )
+                            default:
+                                break
+                            }
+                        }
+                    }
+                    
+                    // Notify about auth state change
+                    NotificationCenter.default.post(name: .authStateDidChange, object: nil)
+                } catch {
+                    print("Error processing auth callback: \(error)")
+                }
+            }
+            return true
+        }
+        return false
+    }
+    
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
         let token = tokenParts.joined()
@@ -96,6 +145,53 @@ class AppDelegate: NSObject, NSApplicationDelegate, AppDelegateProtocol {
         registerForPushNotifications()
     }
     
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        
+        // Handle the authentication callback URL
+        if url.scheme == "whoami" && url.host == "app.whoami" && url.path.contains("/auth/callback") {
+            Task {
+                do {
+                    // Extract and handle auth parameters
+                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                       let queryItems = components.queryItems {
+                        
+                        // Handle different auth scenarios
+                        if let accessToken = queryItems.first(where: { $0.name == "access_token" })?.value,
+                           let refreshToken = queryItems.first(where: { $0.name == "refresh_token" })?.value {
+                            // Handle tokens
+                            print("Received tokens")
+                            try await supabase.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
+                        } else if let type = queryItems.first(where: { $0.name == "type" })?.value {
+                            // Handle different auth types (signup, recovery, etc.)
+                            switch type {
+                            case "signup":
+                                print("Email verification completed")
+                                NotificationCenter.default.post(
+                                    name: .emailVerificationCompleted,
+                                    object: nil
+                                )
+                            case "recovery":
+                                print("Password reset completed")
+                                NotificationCenter.default.post(
+                                    name: .passwordResetCompleted,
+                                    object: nil
+                                )
+                            default:
+                                break
+                            }
+                        }
+                    }
+                    
+                    // Notify about auth state change
+                    NotificationCenter.default.post(name: .authStateDidChange, object: nil)
+                } catch {
+                    print("Error processing auth callback: \(error)")
+                }
+            }
+        }
+    }
+    
     func applicationWillTerminate(_ notification: Notification) {
         // Clean up any resources
     }
@@ -112,14 +208,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AppDelegateProtocol {
                 
                 let userId = session.user.id.uuidString
                 
-                try await supabase.database
-                    .from("device_tokens")
-                    .upsert(values: [
+                try await supabase.from("device_tokens")
+                    .upsert([
                         "user_id": userId,
                         "token": tokenString,
-                        "platform": "macos",
-                        "created_at": Date().ISO8601Format(),
-                        "updated_at": Date().ISO8601Format()
                     ])
                     .execute()
                 
@@ -148,13 +240,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AppDelegateProtocol {
                 let notificationData = try JSONSerialization.data(withJSONObject: userInfo)
                 let notificationString = String(data: notificationData, encoding: .utf8) ?? "{}"
                 
-                try await supabase.database
-                    .from("notification_interactions")
-                    .insert(values: [
+                try await supabase.from("notification_interactions")
+                    .insert([
                         "user_id": userId,
                         "notification_data": notificationString,
-                        "interaction_type": "received",
-                        "created_at": Date().ISO8601Format()
                     ])
                     .execute()
                 
@@ -184,12 +273,10 @@ extension SupabaseClient {
         let session = try await auth.session
         let userId = session.user.id
         
-        try await database.from("device_tokens")
-            .upsert(values: [
+        try await from("device_tokens")
+            .upsert([
                 "user_id": userId.uuidString,
                 "device_token": token,
-                "platform": platform,
-                "last_seen": ISO8601DateFormatter().string(from: Date())
             ])
             .execute()
     }
@@ -198,13 +285,18 @@ extension SupabaseClient {
         let session = try await auth.session
         let userId = session.user.id
         
-        try await database.from("notification_interactions")
-            .insert(values: [
+        try await from("notification_interactions")
+            .insert([
                 "notification_id": notificationId,
                 "user_id": userId.uuidString,
-                "interaction_type": "opened",
-                "interaction_date": ISO8601DateFormatter().string(from: Date())
             ])
             .execute()
     }
-} 
+}
+
+// MARK: - Notification Names
+extension Notification.Name {
+    static let authStateDidChange = Notification.Name("authStateDidChange")
+    static let emailVerificationCompleted = Notification.Name("emailVerificationCompleted")
+    static let passwordResetCompleted = Notification.Name("passwordResetCompleted")
+}

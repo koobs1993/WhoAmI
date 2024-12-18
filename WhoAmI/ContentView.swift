@@ -9,7 +9,8 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authManager.isAuthenticated {
-                MainTabView(authManager: authManager)
+                MainTabView()
+                    .environmentObject(authManager)
                     .onAppear {
                         reviewManager.incrementCount()
                     }

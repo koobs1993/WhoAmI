@@ -77,19 +77,14 @@ class ReviewPromptManager: ObservableObject, @unchecked Sendable {
             return cached
         }
         
-        let response = try await supabase.database
+        let response: PostgrestResponse<[ReviewHistory]> = try await supabase.database
             .from("review_history")
             .select()
-            .order(column: "reviewed_at", ascending: false)
+            .order("reviewed_at", ascending: false)
             .execute()
         
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-        let history = try decoder.decode([ReviewHistory].self, from: data)
-        
-        cache.setObject(CacheEntry(value: history), forKey: "review_history" as NSString)
-        return history
+        cache.setObject(CacheEntry(value: response.value), forKey: "review_history" as NSString)
+        return response.value
     }
     
     public func saveReviewHistory() async throws {
@@ -106,7 +101,7 @@ class ReviewPromptManager: ObservableObject, @unchecked Sendable {
         
         try await supabase.database
             .from("review_history")
-            .insert(values: record)
+            .insert(record)
             .execute()
         
         cache.removeAllObjects()

@@ -1,47 +1,30 @@
 import Foundation
 import Supabase
-import Realtime
 
 protocol SupabaseProtocol {
     var database: PostgrestClient { get }
     var realtime: RealtimeClient { get }
     func updateChatSession(_ session: ChatSession) async throws
-    func saveChatMessage(_ message: ChatMessage) async throws
-    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (ChatMessage) -> Void) -> Channel?
+    func saveChatMessage(_ message: WhoAmI.ChatMessage) async throws
+    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannel?
     func updateProfile(_ profile: UserProfile) async throws
 }
 
 extension SupabaseClient: SupabaseProtocol {
     func updateChatSession(_ session: ChatSession) async throws {
-        struct ChatSessionUpdate: Codable {
-            let status: String
-            let endedAt: Date?
-            let messageCount: Int
-            let updatedAt: Date
-            
-            enum CodingKeys: String, CodingKey {
-                case status
-                case endedAt = "ended_at"
-                case messageCount = "message_count"
-                case updatedAt = "updated_at"
-            }
-        }
-        
-        let update = ChatSessionUpdate(
-            status: session.status.rawValue,
-            endedAt: session.endedAt,
-            messageCount: session.messageCount,
-            updatedAt: Date()
-        )
+        let update = [
+            "title": session.title,
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
         
         try await database
             .from("chat_sessions")
-            .update(values: update)
-            .eq(column: "id", value: session.id.uuidString)
+            .update(update)
+            .eq("id", value: session.id.uuidString)
             .execute()
     }
     
-    func saveChatMessage(_ message: ChatMessage) async throws {
+    func saveChatMessage(_ message: WhoAmI.ChatMessage) async throws {
         struct ChatMessageRecord: Codable {
             let sessionId: UUID
             let userId: UUID?
@@ -49,42 +32,33 @@ extension SupabaseClient: SupabaseProtocol {
             let content: String
             let metadata: [String: String]?
             
-            enum CodingKeys: String, CodingKey {
-                case sessionId = "session_id"
-                case userId = "user_id"
-                case role
-                case content
-                case metadata
+            init(from message: WhoAmI.ChatMessage) {
+                self.sessionId = message.sessionId
+                self.userId = nil // Set based on your requirements
+                self.role = message.role.rawValue
+                self.content = message.content
+                self.metadata = nil // Set based on your requirements
             }
         }
         
-        let record = ChatMessageRecord(
-            sessionId: message.sessionId,
-            userId: message.userId,
-            role: message.role.rawValue,
-            content: message.content,
-            metadata: message.metadata
-        )
+        let record = ChatMessageRecord(from: message)
         
         try await database
             .from("chat_messages")
-            .insert(values: record)
+            .insert(record)
             .execute()
     }
     
-    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (ChatMessage) -> Void) -> Channel? {
-        guard let topic = ChannelTopic(rawValue: "public:chat_messages") else {
-            return nil
-        }
+    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannel? {
+        let channel = realtime.channel("chat_messages:\(sessionId.uuidString)")
         
-        let channel = realtime.channel(topic)
-        
-        channel.on(.all) { message in
-            if let data = try? JSONSerialization.data(withJSONObject: message.payload),
-               let chatMessage = try? JSONDecoder().decode(ChatMessage.self, from: data),
-               chatMessage.sessionId == sessionId {
-                onMessage(chatMessage)
+        channel.on("postgres_changes", filter: .init(event: "*", schema: "public", table: "chat_messages")) { message in
+            let payload = message.payload
+            guard let data = try? JSONSerialization.data(withJSONObject: payload),
+                  let chatMessage = try? JSONDecoder().decode(WhoAmI.ChatMessage.self, from: data) else {
+                return
             }
+            onMessage(chatMessage)
         }
         
         channel.subscribe()
@@ -93,42 +67,27 @@ extension SupabaseClient: SupabaseProtocol {
     
     func updateProfile(_ profile: UserProfile) async throws {
         struct ProfileUpdate: Codable {
+            let email: String
             let firstName: String
             let lastName: String
-            let email: String
-            let gender: String?
             let avatarUrl: String?
-            let bio: String?
-            let phone: String?
-            let updatedAt: Date
+            let updatedAt: String
             
-            enum CodingKeys: String, CodingKey {
-                case firstName = "first_name"
-                case lastName = "last_name"
-                case email
-                case gender
-                case avatarUrl = "avatar_url"
-                case bio
-                case phone
-                case updatedAt = "updated_at"
+            init(from profile: UserProfile) {
+                self.email = profile.email
+                self.firstName = profile.firstName
+                self.lastName = profile.lastName
+                self.avatarUrl = profile.avatarUrl
+                self.updatedAt = ISO8601DateFormatter().string(from: Date())
             }
         }
         
-        let update = ProfileUpdate(
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            email: profile.email,
-            gender: profile.gender?.rawValue,
-            avatarUrl: profile.avatarUrl,
-            bio: profile.bio,
-            phone: profile.phone,
-            updatedAt: Date()
-        )
+        let update = ProfileUpdate(from: profile)
         
         try await database
             .from("profiles")
-            .update(values: update)
-            .eq(column: "id", value: profile.id.uuidString)
+            .update(update)
+            .eq("id", value: profile.id.uuidString)
             .execute()
     }
 } 

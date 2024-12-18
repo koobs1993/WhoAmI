@@ -1,67 +1,51 @@
 import SwiftUI
 import Supabase
 
-extension ChatSession: Equatable {
-    public static func == (lhs: ChatSession, rhs: ChatSession) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
+@MainActor
 class ChatSearchViewModel: ObservableObject {
-    @Published private(set) var sessions: [ChatSession] = []
-    @Published var isLoading = false
+    @Published var sessions: [ChatSession] = []
     @Published var searchText = ""
-    private var currentPage = 0
-    private let pageSize = 20
-    private let supabase: SupabaseClient
+    @Published var currentPage = 1
+    let supabase: SupabaseClient
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
     }
     
-    @MainActor
-    func searchSessions() async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
+    func fetchSessions() async throws {
         let response: PostgrestResponse<[ChatSession]> = try await supabase.database
             .from("chat_sessions")
             .select()
-            .textSearch(column: "title", query: searchText)
+            .order("created_at", ascending: false)
+            .limit(20)
+            .range(from: 0, to: 19)
             .execute()
         
-        sessions = try response.value
+        sessions = response.value
     }
     
-    @MainActor
-    func loadMore() async throws {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-        
+    func loadMoreSessions() async throws {
         let nextPage = currentPage + 1
-        let start = nextPage * pageSize
-        let end = start + pageSize
+        let offset = (nextPage - 1) * 20
         
         let response: PostgrestResponse<[ChatSession]> = try await supabase.database
             .from("chat_sessions")
             .select()
-            .ilike(column: "title", value: "%\(searchText)%")
-            .order(column: "created_at", ascending: false)
-            .range(from: start, to: end)
+            .order("created_at", ascending: false)
+            .limit(20)
+            .range(from: offset, to: offset + 19)
             .execute()
         
-        let newSessions = try response.value
+        let newSessions = response.value
         sessions.append(contentsOf: newSessions)
-        currentPage = nextPage
+        currentPage += 1
     }
 }
 
+@available(macOS 13.0, *)
 struct ChatSearchView: View {
     @StateObject private var viewModel: ChatSearchViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var error: Error?
-    @State private var showError = false
+    @EnvironmentObject private var authManager: AuthManager
     
     init(supabase: SupabaseClient) {
         _viewModel = StateObject(wrappedValue: ChatSearchViewModel(supabase: supabase))
@@ -70,64 +54,70 @@ struct ChatSearchView: View {
     var body: some View {
         List {
             ForEach(viewModel.sessions) { session in
-                ChatSessionCard(session: session)
-                    .onAppear {
-                        if session.id == viewModel.sessions.last?.id {
-                            Task {
-                                try? await viewModel.loadMore()
-                            }
+                NavigationLink {
+                    ChatView(chatService: ChatService(
+                        supabase: viewModel.supabase,
+                        realtime: viewModel.supabase.realtime
+                    ))
+                } label: {
+                    VStack(alignment: .leading) {
+                        let title = session.title ?? "Untitled Chat"
+                        Text(title)
+                            .font(.headline)
+                        
+                        if let lastMessage = session.lastMessage {
+                            Text(lastMessage)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
+                        
+                        Text(session.createdAt, style: .date)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
+                    .padding(.vertical, 4)
+                }
             }
         }
+        .navigationTitle("Chat History")
         .searchable(text: $viewModel.searchText)
-        .onChange(of: viewModel.searchText) { _, newValue in
-            Task {
-                do {
-                    try await viewModel.searchSessions()
-                } catch {
-                    self.error = error
-                    self.showError = true
-                }
+        .task {
+            do {
+                try await viewModel.fetchSessions()
+            } catch {
+                print("Error fetching sessions: \(error)")
             }
-        }
-        .navigationTitle("Search Chats")
-        #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .toolbar {
-            ToolbarItem(placement: {
-                #if os(macOS)
-                return .automatic
-                #else
-                return .navigationBarTrailing
-                #endif
-            }()) {
-                Button("Done") {
-                    dismiss()
-                }
-            }
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(error?.localizedDescription ?? "An unknown error occurred")
         }
     }
 }
 
-struct ChatSessionCard: View {
-    let session: ChatSession
-    
+// Fallback view for older macOS versions
+struct ChatSearchViewFallback: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(session.title ?? "Untitled Chat")
+        VStack {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
+            Text("Chat Feature Unavailable")
                 .font(.headline)
-            
-            Text(session.createdAt, style: .date)
+            Text("This feature requires macOS 13.0 or later")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 8)
+        .padding()
+        .navigationTitle("Chat History")
     }
-} 
+}
+
+#if DEBUG
+@available(macOS 13.0, *)
+struct ChatSearchView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationView {
+            ChatSearchView(supabase: Config.supabaseClient)
+                .environmentObject(AuthManager(supabase: Config.supabaseClient))
+        }
+    }
+}
+#endif

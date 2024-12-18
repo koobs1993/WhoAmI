@@ -2,111 +2,131 @@ import SwiftUI
 import Supabase
 
 struct TestListView: View {
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: TestListViewModel
-    @State private var showingTestDetails = false
-    @State private var selectedTest: PsychTest?
-    private let supabase: SupabaseClient
+    @EnvironmentObject private var authManager: AuthManager
     
     init(supabase: SupabaseClient) {
-        self.supabase = supabase
         _viewModel = StateObject(wrappedValue: TestListViewModel(supabase: supabase))
     }
     
     var body: some View {
-        List {
-            ForEach(viewModel.tests) { test in
-                TestRowView(test: test)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedTest = test
-                        showingTestDetails = true
+        ScrollView {
+            if viewModel.isLoading {
+                ProgressView("Loading tests...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.error {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 50))
+                        .foregroundColor(.red)
+                    
+                    Text("Error Loading Tests")
+                        .font(.headline)
+                    
+                    Text(error.localizedDescription)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    Button("Try Again") {
+                        Task {
+                            await viewModel.retryFetch()
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            } else if viewModel.tests.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "clipboard")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                    
+                    Text("No Tests Available")
+                        .font(.headline)
+                    
+                    Text("Check back later for new tests")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(viewModel.tests) { test in
+                        NavigationLink(
+                            destination: TestDetailView(test: test)
+                        ) {
+                            TestCard(test: test)
+                        }
+                    }
+                }
+                .padding()
             }
         }
         .navigationTitle("Tests")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbar {
-            #if os(iOS)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") { dismiss() }
-            }
-            #else
-            ToolbarItem(placement: .automatic) {
-                Button("Done") { dismiss() }
-            }
-            #endif
-        }
-        .sheet(isPresented: $showingTestDetails) {
-            if let test = selectedTest {
-                TestDetailView(test: test)
-            }
-        }
         .task {
-            do {
-                try await viewModel.fetchTests()
-            } catch {
-                print("Error fetching tests: \(error)")
-            }
+            await viewModel.fetchTests()
         }
     }
 }
 
-struct TestRowView: View {
+struct TestCard: View {
     let test: PsychTest
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(test.title)
-                .font(.headline)
+            if let imageUrl = test.imageUrl {
+                AsyncImage(url: imageUrl) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color.gray.opacity(0.3)
+                }
+                .frame(height: 120)
+                .clipped()
+            }
             
-            Text(test.description)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                Label("\(test.estimatedDuration) min", systemImage: "clock")
-                    .font(.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(test.title)
+                    .font(.headline)
+                
+                Text(test.shortDescription)
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
+                    .lineLimit(2)
                 
-                Spacer()
-                
-                if let progress = test.userProgress {
-                    StatusBadge(status: progress.status.rawValue)
+                HStack {
+                    Label("\(test.durationMinutes) min", systemImage: "clock")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Label("\(test.questions.count) questions", systemImage: "list.bullet")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
-        .padding(.vertical, 8)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .textBackgroundColor))
+        #endif
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
 }
 
-struct StatusBadge: View {
-    let status: String
-    
-    var body: some View {
-        Text(status)
-            .font(.caption2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(statusColor.opacity(0.2))
-            )
-            .foregroundColor(statusColor)
+#Preview {
+    NavigationView {
+        TestListView(supabase: Config.supabaseClient)
+            .environmentObject(AuthManager(supabase: Config.supabaseClient))
     }
-    
-    private var statusColor: Color {
-        switch status.lowercased() {
-        case "active":
-            return .green
-        case "completed":
-            return .blue
-        case "archived":
-            return .gray
-        default:
-            return .primary
-        }
-    }
-} 
+}

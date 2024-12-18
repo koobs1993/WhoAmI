@@ -1,6 +1,5 @@
 #if os(iOS)
 import UIKit
-typealias PlatformImage = UIImage
 #elseif os(macOS)
 import AppKit
 #endif
@@ -8,8 +7,8 @@ import SwiftUI
 import Supabase
 
 struct ProfileView: View {
-    @StateObject var viewModel: ProfileViewModel
-    @Environment(\.presentationMode) var presentationMode
+    @StateObject private var viewModel: ProfileViewModel
+    @Environment(\.dismiss) private var dismiss
     
     init(supabase: SupabaseClient, userId: UUID) {
         _viewModel = StateObject(wrappedValue: ProfileViewModel(supabase: supabase, userId: userId))
@@ -18,66 +17,56 @@ struct ProfileView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section {
-                    if let image = viewModel.profileImage {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 100)
-                    }
-                    Button("Choose Photo") {
-                        // Photo selection logic
-                    }
-                } header: {
-                    Text("Profile Photo")
-                }
-                
-                Section(header: Text("Personal Information")) {
-                    TextField("First Name", text: $viewModel.firstName)
-                    TextField("Last Name", text: $viewModel.lastName)
-                    TextField("Email", text: $viewModel.email)
-                }
-                
-                Section(header: Text("Account")) {
-                    Button("Sign Out") {
-                        Task {
-                            await viewModel.signOut()
+                if let profile = viewModel.profile {
+                    Section(header: Text("Personal Information")) {
+                        Text("First Name: \(profile.firstName)")
+                        Text("Last Name: \(profile.lastName)")
+                        Text("Email: \(profile.email)")
+                        
+                        if let bio = profile.bio {
+                            Text("Bio: \(bio)")
                         }
                     }
-                    .foregroundColor(.red)
-                }
-                
-                Button("Save") {
-                    Task {
-                        do {
-                            try await viewModel.saveProfile()
-                            presentationMode.wrappedValue.dismiss()
-                        } catch {
-                            print("Failed to save profile:", error)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Profile")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            do {
-                                try await viewModel.saveProfile()
-                                presentationMode.wrappedValue.dismiss()
-                            } catch {
-                                print("Failed to save profile:", error)
+                    
+                    if let avatarUrl = profile.avatarUrl {
+                        Section(header: Text("Profile Photo")) {
+                            AsyncImage(url: URL(string: avatarUrl)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 100)
+                            } placeholder: {
+                                Color.gray.opacity(0.3)
+                                    .frame(height: 100)
                             }
                         }
                     }
                 }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
+                
+                if let stats = viewModel.stats {
+                    Section(header: Text("Statistics")) {
+                        StatsSection(stats: stats)
                     }
                 }
+                
+                Section(header: Text("Account")) {
+                    NavigationLink("Edit Profile") {
+                        EditProfileView(viewModel: viewModel)
+                    }
+                    
+                    NavigationLink("Privacy Settings") {
+                        PrivacySettingsView(viewModel: viewModel)
+                    }
+                    
+                    Button("Sign Out") {
+                        Task {
+                            // Sign out logic
+                        }
+                    }
+                    .foregroundColor(.red)
+                }
             }
+            .navigationTitle("Profile")
         }
     }
 }
@@ -90,48 +79,39 @@ struct StatsSection: View {
             Text("Your Progress")
                 .font(.headline)
             
-            ProfileStatsView(stats: stats)
+            HStack(spacing: 20) {
+                StatItem(title: "Courses Completed", value: "\(stats.coursesCompleted)")
+                StatItem(title: "Lessons Completed", value: "\(stats.lessonsCompleted)")
+                StatItem(title: "Average Score", value: String(format: "%.1f%%", stats.averageScore))
+            }
+            
+            if stats.totalTimeSpent > 0 {
+                StatItem(title: "Total Time", value: "\(stats.totalTimeSpent) min")
+            }
         }
         .padding()
         #if os(iOS)
         .background(Color(uiColor: .systemBackground))
         #else
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(NSColor.windowBackgroundColor))
         #endif
         .cornerRadius(12)
         .shadow(radius: 2)
     }
 }
 
-struct SettingsSection: View {
-    @Binding var showingPrivacySettings: Bool
-    @Binding var showingSubscriptionOptions: Bool
+struct StatItem: View {
+    let title: String
+    let value: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Settings")
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
                 .font(.headline)
-            
-            SettingsButton(
-                title: "Privacy Settings",
-                icon: "lock.fill",
-                action: { showingPrivacySettings = true }
-            )
-            
-            SettingsButton(
-                title: "Subscription Options",
-                icon: "star.fill",
-                action: { showingSubscriptionOptions = true }
-            )
         }
-        .padding()
-        #if os(iOS)
-        .background(Color(uiColor: .systemBackground))
-        #else
-        .background(Color(nsColor: .windowBackgroundColor))
-        #endif
-        .cornerRadius(12)
-        .shadow(radius: 2)
     }
 }
 
@@ -153,9 +133,6 @@ struct EditProfileView: View {
                 }
             }
             .navigationTitle("Edit Profile")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -166,25 +143,13 @@ struct EditProfileView: View {
                     Button("Save") {
                         Task {
                             if let profile = viewModel.profile {
-                                let updatedProfile = UserProfile(
-                                    id: profile.id,
-                                    userId: profile.userId,
-                                    firstName: firstName,
-                                    lastName: lastName,
-                                    email: profile.email,
-                                    gender: profile.gender,
-                                    role: profile.role,
-                                    avatarUrl: profile.avatarUrl,
-                                    bio: bio,
-                                    phone: profile.phone,
-                                    isActive: profile.isActive,
-                                    emailConfirmedAt: profile.emailConfirmedAt,
-                                    createdAt: profile.createdAt,
-                                    updatedAt: Date()
-                                )
-                                try? await viewModel.updateProfile(updatedProfile)
+                                var updatedProfile = profile
+                                updatedProfile.firstName = firstName
+                                updatedProfile.lastName = lastName
+                                updatedProfile.bio = bio
+                                await viewModel.updateProfile(updatedProfile)
+                                dismiss()
                             }
-                            dismiss()
                         }
                     }
                 }
@@ -215,14 +180,9 @@ struct PrivacySettingsView: View {
                             get: { settings.showProfile },
                             set: { newValue in
                                 Task {
-                                    do {
-                                        var updatedSettings = settings
-                                        updatedSettings.showProfile = newValue
-                                        try await viewModel.updatePrivacySettings(updatedSettings)
-                                    } catch {
-                                        self.error = error
-                                        self.showingError = true
-                                    }
+                                    var updatedSettings = settings
+                                    updatedSettings.showProfile = newValue
+                                    await viewModel.updatePrivacySettings(updatedSettings)
                                 }
                             }
                         ))
@@ -231,143 +191,38 @@ struct PrivacySettingsView: View {
                             get: { settings.showActivity },
                             set: { newValue in
                                 Task {
-                                    do {
-                                        var updatedSettings = settings
-                                        updatedSettings.showActivity = newValue
-                                        try await viewModel.updatePrivacySettings(updatedSettings)
-                                    } catch {
-                                        self.error = error
-                                        self.showingError = true
-                                    }
-                                }
-                            }
-                        ))
-                    }
-                    
-                    Section(header: Text("Communication")) {
-                        Toggle("Allow Messages", isOn: Binding(
-                            get: { settings.allowMessages },
-                            set: { newValue in
-                                Task {
-                                    do {
-                                        var updatedSettings = settings
-                                        updatedSettings.allowMessages = newValue
-                                        try await viewModel.updatePrivacySettings(updatedSettings)
-                                    } catch {
-                                        self.error = error
-                                        self.showingError = true
-                                    }
+                                    var updatedSettings = settings
+                                    updatedSettings.showActivity = newValue
+                                    await viewModel.updatePrivacySettings(updatedSettings)
                                 }
                             }
                         ))
                         
-                        Toggle("Share Progress", isOn: Binding(
-                            get: { settings.shareProgress },
+                        Toggle("Show Stats", isOn: Binding(
+                            get: { settings.showStats },
                             set: { newValue in
                                 Task {
-                                    do {
-                                        var updatedSettings = settings
-                                        updatedSettings.shareProgress = newValue
-                                        try await viewModel.updatePrivacySettings(updatedSettings)
-                                    } catch {
-                                        self.error = error
-                                        self.showingError = true
-                                    }
+                                    var updatedSettings = settings
+                                    updatedSettings.showStats = newValue
+                                    await viewModel.updatePrivacySettings(updatedSettings)
                                 }
                             }
                         ))
                     }
-                } else {
-                    ProgressView()
                 }
             }
             .navigationTitle("Privacy Settings")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
             .alert("Error", isPresented: $showingError) {
-                Button("OK", role: .cancel) { }
+                Button("OK") { }
             } message: {
-                Text(error?.localizedDescription ?? "An unknown error occurred")
+                if let error = error {
+                    Text(error.localizedDescription)
+                }
             }
         }
     }
 }
 
-struct SubscriptionOptionsView: View {
-    @ObservedObject var viewModel: ProfileViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var error: Error?
-    @State private var showingError = false
-    
-    var body: some View {
-        List {
-            Section {
-                Button {
-                    Task {
-                        do {
-                            _ = try await viewModel.handlePurchase(for: .monthly)
-                            dismiss()
-                        } catch {
-                            self.error = error
-                            showingError = true
-                        }
-                    }
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Monthly")
-                                .font(.headline)
-                            Text("$9.99/month")
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Button {
-                    Task {
-                        do {
-                            _ = try await viewModel.handlePurchase(for: .yearly)
-                            dismiss()
-                        } catch {
-                            self.error = error
-                            showingError = true
-                        }
-                    }
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Yearly")
-                                .font(.headline)
-                            Text("$99.99/year")
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .alert("Error", isPresented: $showingError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(error?.localizedDescription ?? "An unknown error occurred")
-        }
-    }
-} 
+#Preview {
+    ProfileView(supabase: Config.supabaseClient, userId: UUID())
+}

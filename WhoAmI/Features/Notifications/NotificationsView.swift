@@ -4,13 +4,13 @@ import Supabase
 struct NotificationsView: View {
     @StateObject private var viewModel: NotificationsViewModel
     
-    init(supabase: SupabaseClient) {
-        _viewModel = StateObject(wrappedValue: NotificationsViewModel(supabase: supabase))
+    init(supabase: SupabaseClient, userId: UUID) {
+        _viewModel = StateObject(wrappedValue: NotificationsViewModel(supabase: supabase, userId: userId))
     }
     
     var body: some View {
         NavigationView {
-            ZStack {
+            Group {
                 if viewModel.isLoading {
                     ProgressView()
                 } else if viewModel.notifications.isEmpty {
@@ -18,64 +18,70 @@ struct NotificationsView: View {
                 } else {
                     List {
                         ForEach(viewModel.notifications) { notification in
-                            NavigationLink(destination: NotificationDetailView(notification: notification, onAction: handleNotificationAction)) {
-                                NotificationRow(notification: notification)
+                            NavigationLink(destination: NotificationDetailView(
+                                notification: UserNotification(
+                                    id: notification.id,
+                                    userId: notification.userId,
+                                    type: notificationType(from: notification.type),
+                                    title: notification.title,
+                                    message: notification.message,
+                                    read: notification.read,
+                                    createdAt: notification.createdAt
+                                ),
+                                onAction: { userNotification in
+                                    Task {
+                                        await viewModel.markAsRead(notification)
+                                    }
+                                }
+                            )) {
+                                NotificationRow(notification: UserNotification(
+                                    id: notification.id,
+                                    userId: notification.userId,
+                                    type: notificationType(from: notification.type),
+                                    title: notification.title,
+                                    message: notification.message,
+                                    read: notification.read,
+                                    createdAt: notification.createdAt
+                                ))
                             }
                         }
                     }
                 }
             }
             .navigationTitle("Notifications")
-            .task {
-                do {
-                    try await viewModel.fetchNotifications()
-                } catch {
-                    print("Error loading notifications: \(error)")
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    NavigationLink(destination: NotificationSettingsView(viewModel: viewModel)) {
+                        Image(systemName: "gear")
+                    }
                 }
             }
         }
+        .task {
+            await viewModel.fetchNotifications()
+        }
     }
     
-    private func handleNotificationAction(_ action: NotificationAction) {
-        Task {
-            switch action.type {
-            case .openTest:
-                if let testId = action.metadata["testId"],
-                   let url = URL(string: "whoami://test/\(testId)") {
-                    #if os(iOS)
-                    UIApplication.shared.open(url)
-                    #else
-                    NSWorkspace.shared.open(url)
-                    #endif
-                }
-            case .openCourse:
-                if let courseId = action.metadata["courseId"],
-                   let url = URL(string: "whoami://course/\(courseId)") {
-                    #if os(iOS)
-                    UIApplication.shared.open(url)
-                    #else
-                    NSWorkspace.shared.open(url)
-                    #endif
-                }
-            case .openChat:
-                if let chatId = action.metadata["chatId"],
-                   let url = URL(string: "whoami://chat/\(chatId)") {
-                    #if os(iOS)
-                    UIApplication.shared.open(url)
-                    #else
-                    NSWorkspace.shared.open(url)
-                    #endif
-                }
-            case .openURL:
-                if let urlString = action.metadata["url"],
-                   let url = URL(string: urlString) {
-                    #if os(iOS)
-                    UIApplication.shared.open(url)
-                    #else
-                    NSWorkspace.shared.open(url)
-                    #endif
-                }
-            }
+    private func notificationType(from type: String) -> WhoAmI.NotificationType {
+        switch type.lowercased() {
+        case "warning":
+            return .warning
+        case "success":
+            return .success
+        case "error":
+            return .error
+        case "course_update":
+            return .courseUpdate
+        case "test_reminder":
+            return .testReminder
+        case "message":
+            return .message
+        case "achievement":
+            return .achievement
+        case "system":
+            return .system
+        default:
+            return .info
         }
     }
 }
@@ -131,5 +137,5 @@ struct NotificationRow: View {
 }
 
 #Preview {
-    NotificationsView(supabase: Config.supabaseClient)
-} 
+    NotificationsView(supabase: Config.supabaseClient, userId: UUID())
+}

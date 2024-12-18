@@ -19,23 +19,24 @@ class AuthManager: ObservableObject {
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
+        Task {
+            await checkSession()
+        }
     }
     
-    func signUp(data: AuthModels.SignUpData) async throws {
+    func signUp(data: AuthModels.BasicSignUpData) async throws {
         isLoading = true
         defer { isLoading = false }
         
         do {
             let authResponse = try await supabase.auth.signUp(
                 email: data.email,
-                password: data.password
+                password: data.password,
+                data: ["email_confirm": false]  // Disable email confirmation
             )
             
-            if authResponse.user == nil {
-                throw AuthModels.AuthError.signUpFailed("Failed to get user data")
-            }
-            
-            try await sendVerificationEmail(email: data.email)
+            self.currentUser = authResponse.user
+            self.isAuthenticated = true
             
         } catch let error as AuthModels.AuthError {
             throw error
@@ -48,19 +49,28 @@ class AuthManager: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        let authResponse = try await supabase.auth.signIn(
-            email: email,
-            password: password
-        )
-        
-        self.currentUser = authResponse.user
-        self.isAuthenticated = true
+        do {
+            let authResponse = try await supabase.auth.signIn(
+                email: email,
+                password: password
+            )
+            
+            self.currentUser = authResponse.user
+            self.isAuthenticated = true
+            
+        } catch {
+            throw AuthModels.AuthError.signInFailed(error.localizedDescription)
+        }
     }
     
     func signOut() async throws {
-        try await supabase.auth.signOut()
-        self.currentUser = nil
-        self.isAuthenticated = false
+        do {
+            try await supabase.auth.signOut()
+            self.currentUser = nil
+            self.isAuthenticated = false
+        } catch {
+            throw AuthModels.AuthError.signOutFailed(error.localizedDescription)
+        }
     }
     
     func refreshSession() async {
@@ -75,15 +85,12 @@ class AuthManager: ObservableObject {
         }
     }
     
-    private func sendVerificationEmail(email: String) async throws {
-        try await supabase.auth.signUp(
-            email: email,
-            password: UUID().uuidString // Temporary password that will be reset
-        )
-    }
-    
     func resetPassword(email: String) async throws {
-        try await supabase.auth.resetPasswordForEmail(email)
+        do {
+            try await supabase.auth.resetPasswordForEmail(email)
+        } catch {
+            throw AuthModels.AuthError.signInFailed("Failed to send password reset email")
+        }
     }
     
     func updatePassword(newPassword: String) async throws {
@@ -100,4 +107,22 @@ class AuthManager: ObservableObject {
             self.isAuthenticated = false
         }
     }
-} 
+    
+    // Method to update user profile after basic signup
+    func updateProfile(data: AuthModels.SignUpData) async throws {
+        guard let userId = currentUserId else {
+            throw AuthModels.AuthError.userNotFound
+        }
+        
+        try await supabase.from("profiles")
+            .upsert([
+                "id": userId.uuidString,
+                "first_name": data.firstName,
+                "last_name": data.lastName,
+                "gender": data.gender.rawValue,
+                "role": data.role.rawValue,
+                "updated_at": ISO8601DateFormatter().string(from: Date())
+            ])
+            .execute()
+    }
+}

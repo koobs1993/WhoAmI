@@ -33,6 +33,13 @@ enum AuthModels {
         }
     }
     
+    // Basic signup data for initial registration
+    struct BasicSignUpData {
+        let email: String
+        let password: String
+    }
+    
+    // Full signup data for profile completion
     struct SignUpData: Codable {
         let email: String
         let password: String
@@ -55,4 +62,4 @@ enum AuthModels {
         let email: String
         let password: String
     }
-} 
+}

@@ -1,48 +1,79 @@
 import SwiftUI
 import Supabase
 
+@available(macOS 12.0, *)
 struct LoginView: View {
-    @StateObject private var viewModel: LoginViewModel
-    @State private var email = ""
-    @State private var password = ""
-    @State private var showingError = false
-    @State private var errorMessage = ""
-    
-    init(authManager: AuthManager) {
-        _viewModel = StateObject(wrappedValue: LoginViewModel(authManager: authManager))
-    }
+    @ObservedObject var viewModel: AuthViewModel
+    @State private var isSignUp = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Login")
-                .font(.largeTitle)
+        VStack(spacing: 16) {
+            Text(isSignUp ? "Create Account" : "Welcome Back")
+                .font(.title)
                 .fontWeight(.bold)
             
-            VStack(spacing: 15) {
-                TextField("Email", text: $email)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.emailAddress)
-                    #if !os(macOS)
-                    .autocapitalization(.none)
-                    #endif
-                
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.password)
-                
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
-                
+            TextField("Email", text: $viewModel.email)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled(true)
+                #endif
+            
+            SecureField("Password", text: $viewModel.password)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            if !viewModel.errorMessage.isEmpty {
+                Text(viewModel.errorMessage)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            
+            if isSignUp {
+                // Sign Up View
                 Button(action: {
                     Task {
-                        await viewModel.login(email: email, password: password)
+                        do {
+                            try await viewModel.signUp()
+                        } catch {
+                            // Error is already handled in AuthViewModel
+                        }
                     }
                 }) {
                     if viewModel.isLoading {
                         ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Create Account")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isLoading)
+                
+                Button("Already have an account? Sign In") {
+                    isSignUp = false
+                    viewModel.errorMessage = ""
+                }
+                .foregroundColor(.accentColor)
+                
+            } else {
+                // Sign In View
+                Button(action: {
+                    Task {
+                        do {
+                            try await viewModel.signIn()
+                        } catch {
+                            // Error is already handled in AuthViewModel
+                        }
+                    }
+                }) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
                     } else {
                         Text("Sign In")
                             .frame(maxWidth: .infinity)
@@ -50,17 +81,38 @@ struct LoginView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isLoading)
+                
+                Button("Forgot Password?") {
+                    Task {
+                        await viewModel.sendPasswordReset(email: viewModel.email)
+                    }
+                }
+                .foregroundColor(.accentColor)
+                .disabled(viewModel.isLoading)
+                
+                Button("Need an account? Sign Up") {
+                    isSignUp = true
+                    viewModel.errorMessage = ""
+                }
+                .foregroundColor(.accentColor)
             }
-            .padding()
         }
         .padding()
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .windowBackgroundColor))
+        #endif
+        .cornerRadius(10)
+        .shadow(radius: 5)
     }
 }
 
 #if DEBUG
+@available(macOS 12.0, *)
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
-        LoginView(authManager: AuthManager(supabase: SupabaseClient(supabaseURL: URL(string: "https://your-project.supabase.co")!, supabaseKey: "your-key")))
+        LoginView(viewModel: AuthViewModel(supabase: Config.supabaseClient))
     }
 }
-#endif 
+#endif

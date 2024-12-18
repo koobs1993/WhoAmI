@@ -1,129 +1,95 @@
 import SwiftUI
 import Supabase
 
-enum Tab {
-    case dashboard, courses, tests, chat, profile
-    
-    var title: String {
-        switch self {
-        case .dashboard: return "Dashboard"
-        case .courses: return "Courses"
-        case .tests: return "Tests"
-        case .chat: return "Chat"
-        case .profile: return "Profile"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .dashboard: return "house.fill"
-        case .courses: return "book.fill"
-        case .tests: return "checklist"
-        case .chat: return "message.fill"
-        case .profile: return "person.fill"
-        }
-    }
-}
-
+@available(macOS 12.0, *)
 struct MainTabView: View {
-    @StateObject var authManager: AuthManager
+    @EnvironmentObject var authManager: AuthManager
     @State private var selectedTab = 0
-    @State private var showSettings = false
     
     var body: some View {
-        TabView {
-            NavigationView {
-                Group {
-                    if let userId = authManager.currentUserId {
-                        DashboardView(
-                            supabase: authManager.supabase,
-                            userId: userId
-                        )
-                    } else {
-                        Text("Please log in to view dashboard")
-                    }
+        TabView(selection: $selectedTab) {
+            if let userId = authManager.currentUser?.id {
+                // Dashboard Tab
+                NavigationView {
+                    DashboardView(supabase: authManager.supabase)
                 }
-            }
-            .tabItem {
-                Label("Dashboard", systemImage: "house.fill")
-            }
-            .tag(0)
-            
-            NavigationView {
-                CourseListView(supabase: authManager.supabase)
-                    .navigationTitle("Courses")
-            }
-            .tabItem {
-                Label("Courses", systemImage: "book.fill")
-            }
-            .tag(1)
-            
-            NavigationView {
-                Group {
-                    if let userId = authManager.currentUserId {
-                        ChatView(
+                .tabItem {
+                    Label("Dashboard", systemImage: "house.fill")
+                }
+                .tag(0)
+                
+                // Courses Tab
+                NavigationView {
+                    CourseListView(supabase: authManager.supabase, userId: userId)
+                }
+                .tabItem {
+                    Label("Courses", systemImage: "book.fill")
+                }
+                .tag(1)
+                
+                // Tests Tab
+                NavigationView {
+                    TestListView(supabase: authManager.supabase)
+                }
+                .tabItem {
+                    Label("Tests", systemImage: "checklist")
+                }
+                .tag(2)
+                
+                // Chat Tab
+                if #available(macOS 13.0, *) {
+                    NavigationView {
+                        ChatView(chatService: ChatService(
                             supabase: authManager.supabase,
-                            channelId: UUID(),
-                            userId: userId
-                        )
-                        .toolbar {
-                            ToolbarItem {
-                                Button {
-                                    showSettings.toggle()
-                                } label: {
-                                    Image(systemName: "gear")
-                                }
-                            }
+                            realtime: authManager.supabase.realtime
+                        ))
+                    }
+                    .tabItem {
+                        Label("Chat", systemImage: "message.fill")
+                    }
+                    .tag(3)
+                } else {
+                    // Fallback view for older OS versions
+                    Text("Chat feature requires macOS 13.0 or later")
+                        .tabItem {
+                            Label("Chat", systemImage: "message.fill")
                         }
-                    } else {
-                        Text("Please log in to access chat")
-                    }
+                        .tag(3)
                 }
+                
+                // Profile Tab
+                NavigationView {
+                    ProfileView(supabase: authManager.supabase, userId: userId)
+                }
+                .tabItem {
+                    Label("Profile", systemImage: "person.fill")
+                }
+                .tag(4)
             }
-            .tabItem {
-                Label("Chat", systemImage: "message.fill")
-            }
-            .tag(2)
+        }
+        .onAppear {
+            // Set the default selected tab to Dashboard
+            selectedTab = 0
             
-            NavigationView {
-                Group {
-                    if let userId = authManager.currentUserId {
-                        ProfileView(
-                            supabase: authManager.supabase,
-                            userId: userId
-                        )
-                    } else {
-                        Text("Please log in to view profile")
-                    }
-                }
+            // Set platform-specific UI appearance
+            #if os(iOS)
+            let appearance = UITabBarAppearance()
+            appearance.configureWithDefaultBackground()
+            UITabBar.appearance().standardAppearance = appearance
+            if #available(iOS 15.0, *) {
+                UITabBar.appearance().scrollEdgeAppearance = appearance
             }
-            .tabItem {
-                Label("Profile", systemImage: "person.fill")
-            }
-            .tag(3)
+            #endif
         }
     }
 }
 
-#Preview {
-    MainTabView(
-        authManager: AuthManager(supabase: Config.supabaseClient)
-    )
-}
-
-struct NotificationButton: View {
-    let supabase: SupabaseClient
-    let userId: String
-    
-    var body: some View {
-        Button(action: {
-            // Implement notification button action
-        }) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(.primary)
-            }
-        }
+#if DEBUG
+@available(macOS 12.0, *)
+struct MainTabView_Previews: PreviewProvider {
+    static var previews: some View {
+        MainTabView()
+            .environmentObject(AuthManager(supabase: Config.supabaseClient))
     }
-} 
+}
+#endif

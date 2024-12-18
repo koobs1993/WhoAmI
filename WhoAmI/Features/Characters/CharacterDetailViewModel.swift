@@ -24,8 +24,8 @@ class CharacterDetailViewModel: ObservableObject {
     func fetchCharacter() async {
         isLoading = true
         do {
-            let query = supabase.database.from("characters")
-                .select(columns: """
+            let query = supabase.from("characters")
+                .select("""
                 id,
                 name,
                 description,
@@ -41,7 +41,7 @@ class CharacterDetailViewModel: ObservableObject {
                     )
                 )
                 """)
-                .eq(column: "id", value: characterId)
+                .eq("id", value: characterId)
                 .single()
             
             let response: PostgrestResponse<Character> = try await query.execute()
@@ -61,10 +61,9 @@ class CharacterDetailViewModel: ObservableObject {
     private func fetchRelatedCharacters(problems: [CharacterProblem]) async {
         do {
             let problemIds = problems.map { String($0.id) }
-            let problemIdsString = problemIds.joined(separator: ",")
             
-            let query = supabase.database.from("character_problems")
-                .select(columns: """
+            let query = supabase.from("character_problems")
+                .select("""
                 character:characters (
                     id,
                     name,
@@ -75,9 +74,9 @@ class CharacterDetailViewModel: ObservableObject {
                     updated_at
                 )
                 """)
-                .filter(column: "problem_id", operator: .in, value: problemIdsString)
-                .neq(column: "character_id", value: characterId)
-                .limit(count: 5)
+                .in("problem_id", value: problemIds)  // Fixed: changed 'values' to 'value'
+                .neq("character_id", value: characterId)
+                .limit(5)
             
             let response: PostgrestResponse<[CharacterProblemRelation]> = try await query.execute()
             relatedCharacters = response.value.compactMap { $0.character }
@@ -110,4 +109,4 @@ class CharacterDetailViewModel: ObservableObject {
         }
         #endif
     }
-} 
+}

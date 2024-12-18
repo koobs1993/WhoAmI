@@ -12,9 +12,9 @@ struct ProfileStatsView: View {
     
     var body: some View {
         HStack(spacing: 20) {
-            StatItem(title: "Tests", value: "\(stats.completedTests)", icon: "checklist")
-            StatItem(title: "Courses", value: "\(stats.coursesCompleted)", icon: "book.fill")
-            StatItem(title: "Streak", value: "\(stats.streak)", icon: "flame.fill")
+            ProfileStatItem(title: "Tests", value: "\(stats.completedTests)")
+            ProfileStatItem(title: "Courses", value: "\(stats.coursesCompleted)")
+            ProfileStatItem(title: "Streak", value: "\(stats.streak)")
         }
         .padding()
         #if os(iOS)
@@ -26,7 +26,20 @@ struct ProfileStatsView: View {
     }
 }
 
-private struct StatItem: View {
+struct StatsView: View {
+    let stats: UserStats
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            StatItemView(title: "Tests", value: "\(stats.completedTests)", icon: "checklist")
+            StatItemView(title: "Courses", value: "\(stats.coursesCompleted)", icon: "book.fill")
+            StatItemView(title: "Streak", value: "\(stats.streak)", icon: "flame.fill")
+        }
+        .padding()
+    }
+}
+
+private struct StatItemView: View {
     let title: String
     let value: String
     let icon: String
@@ -222,3 +235,18 @@ struct ImagePickerWindow: View {
     }
 }
 #endif 
+
+private struct ProfileStatItem: View {
+    let title: String
+    let value: String
+    
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.headline)
+        }
+    }
+}

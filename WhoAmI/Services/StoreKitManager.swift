@@ -2,49 +2,67 @@ import Foundation
 import StoreKit
 import Supabase
 
-enum AuthenticationError: Error {
-    case notAuthenticated
+enum StoreError: Error {
+    case verificationFailed
+    case purchaseFailed
+    case subscriptionNotFound
+    case invalidProduct
+    case networkError
+    case databaseError
 }
 
-struct PurchaseRecord: Codable {
-    let transactionId: String
-    let productId: String
-    let userId: String
-    let purchaseDate: Date
-    let quantity: Int
+class SubscriptionCache: CacheProtocol {
+    private var cache = [String: Any]()
+    private let lock = NSLock()
     
-    enum CodingKeys: String, CodingKey {
-        case transactionId = "transaction_id"
-        case productId = "product_id"
-        case userId = "user_id"
-        case purchaseDate = "purchase_date"
-        case quantity
+    public func get<T: Codable>(_ type: T.Type, forKey key: String) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache[key] as? T
+    }
+    
+    public func set<T: Codable>(_ value: T, forKey key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        cache[key] = value
+    }
+    
+    public func remove(forKey key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        cache.removeValue(forKey: key)
+    }
+    
+    public func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+        cache.removeAll()
     }
 }
 
 @MainActor
-class StoreKitManager: BaseService, @unchecked Sendable {
-    static let shared: StoreKitManager = {
-        return StoreKitManager(supabase: Config.supabaseClient)
-    }()
+class StoreKitManager: BaseService {
+    @Published private(set) var subscriptions: [Product] = []
+    @Published private(set) var purchasedSubscriptions: [Product] = []
+    @Published var error: Error?
     
-    private let cache = NSCache<NSString, CacheEntry<[SubscriptionStatus]>>()
-    private let cacheDuration: TimeInterval = 300 // 5 minutes
+    private let cache = SubscriptionCache()
+    private var updateListenerTask: Task<Void, Error>?
     
-    private override init(supabase: SupabaseClient) {
+    override init(supabase: SupabaseClient) {
         super.init(supabase: supabase)
-        Task { @MainActor in
-            setupCache(cache)
+        setupCache(cache)
+        Task {
             await listenForTransactions()
         }
     }
     
     private func listenForTransactions() async {
-        for await transaction in Transaction.updates {
+        for await result in Transaction.updates {
             do {
-                try await handleTransaction(transaction)
+                try await handleTransaction(result)
             } catch {
-                print("Failed to handle transaction: \(error.localizedDescription)")
+                self.error = error
             }
         }
     }
@@ -53,98 +71,56 @@ class StoreKitManager: BaseService, @unchecked Sendable {
         guard case .verified(let transaction) = verificationResult else {
             throw StoreError.verificationFailed
         }
-
-        let session = try await supabase.auth.session
-        let status: SubscriptionStatus = transaction.revocationDate == nil ? .active : .canceled
         
-        struct SubscriptionRecord: Codable {
-            let userId: String
-            let productId: String
-            let originalTransactionId: String
-            let webOrderLineItemId: String?
-            let purchaseDate: Date
-            let expirationDate: Date?
-            let status: String
+        // Handle transaction
+        if transaction.revocationDate == nil {
+            // Transaction is valid
+            await transaction.finish()
+            await refreshPurchasedSubscriptions()
+        } else {
+            // Subscription was refunded or revoked
+            await refreshPurchasedSubscriptions()
+        }
+    }
+    
+    func fetchSubscriptions() async throws {
+        let products = try await Product.products(for: ["premium_monthly", "premium_yearly"])
+        subscriptions = products.sorted { $0.price < $1.price }
+    }
+    
+    func purchase(_ product: Product) async throws {
+        let result = try await product.purchase()
+        
+        switch result {
+        case .success(let verification):
+            guard case .verified(let transaction) = verification else {
+                throw StoreError.verificationFailed
+            }
+            await transaction.finish()
+            await refreshPurchasedSubscriptions()
             
-            enum CodingKeys: String, CodingKey {
-                case userId = "user_id"
-                case productId = "product_id"
-                case originalTransactionId = "original_transaction_id"
-                case webOrderLineItemId = "web_order_line_item_id"
-                case purchaseDate = "purchase_date"
-                case expirationDate = "expiration_date"
-                case status
+        case .userCancelled:
+            throw StoreError.purchaseFailed
+            
+        case .pending:
+            break
+            
+        @unknown default:
+            throw StoreError.purchaseFailed
+        }
+    }
+    
+    func refreshPurchasedSubscriptions() async {
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            
+            if let subscription = subscriptions.first(where: { $0.id == transaction.productID }) {
+                purchasedSubscriptions.append(subscription)
             }
         }
-        
-        let record = SubscriptionRecord(
-            userId: session.user.id.uuidString,
-            productId: transaction.productID,
-            originalTransactionId: String(transaction.originalID),
-            webOrderLineItemId: transaction.webOrderLineItemID,
-            purchaseDate: transaction.purchaseDate,
-            expirationDate: transaction.expirationDate,
-            status: status.rawValue
-        )
-        
-        try await supabase.database
-            .from("subscriptions")
-            .upsert(values: record)
-            .execute()
-        
-        let purchase = PurchaseRecord(
-            transactionId: String(transaction.id),
-            productId: transaction.productID,
-            userId: session.user.id.uuidString,
-            purchaseDate: transaction.purchaseDate,
-            quantity: 1
-        )
-        
-        try await supabase.database
-            .from("purchases")
-            .insert(values: purchase)
-            .execute()
     }
     
-    func recordPurchase(_ transaction: Transaction) async throws {
-        guard let session = try? await supabase.auth.session else {
-            throw AuthenticationError.notAuthenticated
-        }
-        
-        let record = PurchaseRecord(
-            transactionId: String(transaction.id),
-            productId: transaction.productID,
-            userId: session.user.id.uuidString,
-            purchaseDate: transaction.purchaseDate,
-            quantity: 1
-        )
-        
-        try await supabase.database
-            .from("purchases")
-            .insert(values: record)
-            .execute()
+    deinit {
+        updateListenerTask?.cancel()
     }
 }
-
-enum StoreKitError: LocalizedError, Sendable {
-    case verificationFailed
-    case purchaseFailed
-    case userCancelled
-    case networkError
-    case unknown
-    
-    var errorDescription: String? {
-        switch self {
-        case .verificationFailed:
-            return "Transaction verification failed"
-        case .purchaseFailed:
-            return "Purchase failed"
-        case .userCancelled:
-            return "Purchase was cancelled"
-        case .networkError:
-            return "Network error occurred"
-        case .unknown:
-            return "An unknown error occurred"
-        }
-    }
-} 

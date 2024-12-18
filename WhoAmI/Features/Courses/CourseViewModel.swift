@@ -1,95 +1,181 @@
 import Foundation
 import Supabase
+import SwiftUI
 
 @MainActor
 class CourseViewModel: ObservableObject {
+    private let supabase: SupabaseClient
+    private let userId: UUID
+    
     @Published var courses: [Course] = []
     @Published var currentCourse: Course?
     @Published var isLoading = false
     @Published var error: Error?
     
-    private let supabase: SupabaseClient
-    
-    init(supabase: SupabaseClient) {
+    init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
-    }
-    
-    func loadCourses() async throws {
-        let response: PostgrestResponse<[Course]> = try await supabase.database
-            .from("courses")
-            .select()
-            .order(column: "created_at")
-            .execute()
-        
-        courses = try response.value
+        self.userId = userId
+        print("CourseViewModel initialized with userId: \(userId)")
     }
     
     func fetchCourses() async throws {
-        let response = try await supabase.database
-            .from("courses")
-            .select()
-            .execute()
+        isLoading = true
+        defer { isLoading = false }
         
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-        courses = try decoder.decode([Course].self, from: data)
-    }
-    
-    func fetchUserCourses() async throws {
-        let response = try await supabase.database
-            .from("user_courses")
-            .select(columns: """
-                *,
-                course:courses (
+        let response: PostgrestResponse<[Course]> = try await supabase.database
+            .from("courses")
+            .select("""
+                id,
+                title,
+                description,
+                image_url,
+                difficulty,
+                category,
+                estimated_duration,
+                lessons (
                     id,
                     title,
                     description,
-                    image_url,
                     duration,
-                    lessons,
-                    created_at,
-                    updated_at
-                )
+                    order,
+                    content
+                ),
+                created_at,
+                updated_at
             """)
+            .order("created_at")
             .execute()
         
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-        let userCourses = try decoder.decode([UserCourseData].self, from: data)
-        courses = userCourses.map { $0.course }
+        courses = response.value
     }
     
-    func fetchCourse(id: UUID) async throws -> Course {
-        let response = try await supabase.database
-            .from("courses")
-            .select()
-            .eq(column: "id", value: id.uuidString)
-            .single()
-            .execute()
+    func fetchEnrolledCourses() async throws {
+        isLoading = true
+        defer { isLoading = false }
         
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-        return try decoder.decode(Course.self, from: data)
+        do {
+            print("Fetching enrolled courses for user: \(userId)")
+            let query = try await supabase.from("user_courses")
+                .select("""
+                    id,
+                    user_id,
+                    course_id,
+                    progress,
+                    started_at,
+                    completed_at,
+                    updated_at,
+                    course:courses (
+                        id,
+                        title,
+                        description,
+                        image_url,
+                        difficulty,
+                        category,
+                        estimated_duration,
+                        lessons (
+                            id,
+                            title,
+                            description,
+                            duration,
+                            order,
+                            content,
+                            created_at,
+                            updated_at
+                        ),
+                        created_at,
+                        updated_at
+                    )
+                """)
+                .eq("user_id", value: userId)
+            
+            print("Executing query: \(String(describing: query))")
+            
+            let response: PostgrestResponse<[EnrolledCourseResponse]> = try await query.execute()
+            print("Raw response: \(String(describing: response))")
+            
+            courses = response.value.map { $0.course }
+            
+            if courses.isEmpty {
+                print("No enrolled courses found for user: \(userId)")
+                // Fetch all available courses instead
+                try await fetchCourses()
+            } else {
+                print("Found \(courses.count) enrolled courses")
+                courses.forEach { course in
+                    print("Enrolled course: \(course.title) (ID: \(course.id))")
+                }
+            }
+        } catch {
+            self.error = error
+            print("Error fetching enrolled courses: \(error)")
+            print("Error details: \(String(describing: error))")
+            
+            // Fallback to fetching all courses
+            print("Falling back to fetching all courses...")
+            try await fetchCourses()
+        }
     }
     
-    func calculateProgress(for course: Course) -> Double {
-        guard let lessons = course.lessons, !lessons.isEmpty else { return 0.0 }
-        let completedCount = lessons.filter { $0.status == .completed }.count
-        return Double(completedCount) / Double(lessons.count)
+    func enrollInCourse(_ course: Course) async throws {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            print("Enrolling user \(userId) in course \(course.id)")
+            let enrollment = UserCourse(
+                id: UUID(),
+                userId: userId,
+                courseId: course.id,
+                progress: 0.0,
+                startedAt: Date(),
+                completedAt: nil,
+                updatedAt: Date()
+            )
+            
+            let values: [String: Any] = [
+                "id": enrollment.id.uuidString,
+                "user_id": enrollment.userId.uuidString,
+                "course_id": enrollment.courseId,
+                "progress": enrollment.progress,
+                "started_at": ISO8601DateFormatter().string(from: enrollment.startedAt),
+                "completed_at": NSNull(),
+                "updated_at": ISO8601DateFormatter().string(from: enrollment.updatedAt)
+            ]
+            
+            try await supabase.database.from("user_courses")
+                .insert(values)
+                .execute()
+            
+            print("Successfully enrolled in course")
+            try await fetchEnrolledCourses()
+        } catch {
+            self.error = error
+            print("Error enrolling in course: \(error)")
+            print("Error details: \(String(describing: error))")
+            throw error
+        }
+    }
+    
+    func unenrollFromCourse(_ course: Course) async throws {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            print("Unenrolling user \(userId) from course \(course.id)")
+            try await supabase.database
+                .from("user_courses")
+                .delete()
+                .eq("user_id", value: userId)
+                .eq("course_id", value: course.id)
+                .execute()
+            
+            print("Successfully unenrolled from course")
+            try await fetchEnrolledCourses()
+        } catch {
+            self.error = error
+            print("Error unenrolling from course: \(error)")
+            print("Error details: \(String(describing: error))")
+            throw error
+        }
     }
 }
-
-struct UserCourseData: Codable {
-    let id: UUID
-    let userId: UUID
-    let courseId: UUID
-    let course: Course
-    let progress: Double?
-    let lastAccessedAt: Date?
-    let createdAt: Date
-    let updatedAt: Date
-} 

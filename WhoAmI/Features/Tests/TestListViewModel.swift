@@ -11,18 +11,73 @@ class TestListViewModel: ObservableObject {
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
+        print("TestListViewModel initialized")
     }
     
-    func fetchTests() async throws {
+    func fetchTests() async {
         isLoading = true
-        defer { isLoading = false }
+        error = nil
         
-        let response: PostgrestResponse<[PsychTest]> = try await supabase.database
-            .from("tests")
-            .select()
-            .order(column: "created_at", ascending: false)
-            .execute()
+        do {
+            print("Fetching tests...")
+            let response: PostgrestResponse<[PsychTest]> = try await supabase.from("psych_tests")
+                .select("""
+                    id,
+                    title,
+                    short_description,
+                    category,
+                    image_url,
+                    duration_minutes,
+                    is_active,
+                    created_at,
+                    updated_at,
+                    test_progress (
+                        status,
+                        last_updated,
+                        score
+                    ),
+                    testquestions (
+                        id,
+                        uuid,
+                        text,
+                        type,
+                        required,
+                        options
+                    ),
+                    testbenefits (
+                        id,
+                        title,
+                        description
+                    )
+                """)
+                .eq("is_active", value: true)
+                .order("created_at", ascending: false)
+                .execute()
+            
+            tests = response.value
+            print("Fetched \(tests.count) tests")
+            
+            if tests.isEmpty {
+                print("No tests found in the database")
+            } else {
+                tests.forEach { test in
+                    print("Test: \(test.title)")
+                    print("Questions: \(test.questions.count)")
+                    if let progress = test.userProgress {
+                        print("Progress status: \(progress.status)")
+                    }
+                }
+            }
+        } catch {
+            print("Error fetching tests: \(error)")
+            print("Error details: \(String(describing: error))")
+            self.error = error
+        }
         
-        tests = try response.value
+        isLoading = false
     }
-} 
+    
+    func retryFetch() async {
+        await fetchTests()
+    }
+}

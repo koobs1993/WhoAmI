@@ -1,122 +1,149 @@
 import SwiftUI
 import Supabase
 
-@MainActor
-class DashboardViewModel: ObservableObject {
-    @Published var courses: [Course] = []
-    @Published var isLoading = false
-    @Published var error: Error?
-    
-    let supabase: SupabaseClient
-    let userId: UUID
-    
-    init(supabase: SupabaseClient, userId: UUID) {
-        self.supabase = supabase
-        self.userId = userId
-    }
-    
-    @MainActor
-    func loadCourses() async {
-        isLoading = true
-        error = nil
-        
-        do {
-            let response: PostgrestResponse<[CourseData]> = try await supabase.database
-                .from("user_courses")
-                .select(columns: """
-                    *,
-                    course:courses (
-                        id,
-                        title,
-                        description,
-                        image_url,
-                        duration,
-                        difficulty,
-                        prerequisites,
-                        is_active,
-                        created_at,
-                        updated_at
-                    )
-                """)
-                .eq(column: "user_id", value: userId.uuidString)
-                .execute()
-            
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
-            let userCourses = try decoder.decode([CourseData].self, from: data)
-            courses = userCourses.map { courseData in
-                Course(
-                    id: courseData.course.id,
-                    title: courseData.course.title,
-                    description: courseData.course.description,
-                    imageUrl: courseData.course.imageUrl,
-                    estimatedDuration: courseData.course.duration,
-                    lessons: [],
-                    createdAt: courseData.course.createdAt,
-                    updatedAt: courseData.course.updatedAt
-                )
-            }
-        } catch {
-            self.error = error
-            print("Error loading courses: \(error)")
-        }
-        
-        isLoading = false
-    }
-}
-
 struct DashboardView: View {
     @StateObject private var viewModel: DashboardViewModel
+    @EnvironmentObject private var authManager: AuthManager
     
-    init(supabase: SupabaseClient, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: DashboardViewModel(supabase: supabase, userId: userId))
+    init(supabase: SupabaseClient) {
+        _viewModel = StateObject(wrappedValue: DashboardViewModel(supabase: supabase))
     }
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if viewModel.isLoading {
-                    ProgressView()
-                } else {
-                    ForEach(viewModel.courses) { course in
-                        CourseCard(course: course)
+            VStack(spacing: 24) {
+                // Weekly Column Section
+                if !viewModel.weeklyColumns.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Weekly Insights")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 16) {
+                                ForEach(viewModel.weeklyColumns) { column in
+                                    WeeklyColumnCard(column: column)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
                     }
                 }
+                
+                // Ongoing Courses Section
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Ongoing Courses")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    if viewModel.ongoingCourses.isEmpty {
+                        Text("No active courses")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(viewModel.ongoingCourses) { course in
+                            NavigationLink(
+                                destination: CourseDetailView(
+                                    supabase: authManager.supabase,
+                                    userId: authManager.currentUser?.id ?? UUID(),
+                                    course: course
+                                )
+                            ) {
+                                CourseProgressCard(course: course)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
             }
-            .padding()
+            .padding(.vertical)
         }
         .navigationTitle("Dashboard")
         .task {
-            await viewModel.loadCourses()
+            await viewModel.fetchData()
         }
     }
 }
 
-struct CourseCard: View {
+struct WeeklyColumnCard: View {
+    let column: WeeklyColumn
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(column.title)
+                .font(.headline)
+            
+            Text(column.summary)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .lineLimit(3)
+            
+            Text(column.createdAt?.formatted(.relative(presentation: .named)) ?? "")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(width: 280)
+        .padding()
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .textBackgroundColor))
+        #endif
+        .cornerRadius(12)
+        .shadow(radius: 2)
+    }
+}
+
+struct CourseProgressCard: View {
     let course: Course
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(course.title)
                 .font(.headline)
             
-            Text(course.description)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
+            if let description = course.description {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            
+            HStack {
+                Label("Level \(course.difficulty)", systemImage: "star.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Label(course.category, systemImage: "folder.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             if let duration = course.estimatedDuration {
-                HStack {
-                    Image(systemName: "clock")
-                    Text("\(duration) minutes")
-                        .font(.caption)
-                }
-                .foregroundColor(.secondary)
+                Label("\(duration) min", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+            
+            // Progress bar could be added here when we have progress data
+            // ProgressView(value: progress)
+            //     .progressViewStyle(.linear)
         }
         .padding()
-        .background(Color.secondary.opacity(0.1))
-        .cornerRadius(10)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .textBackgroundColor))
+        #endif
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
-} 
+}
+
+#Preview {
+    NavigationView {
+        DashboardView(supabase: Config.supabaseClient)
+            .environmentObject(AuthManager(supabase: Config.supabaseClient))
+    }
+}

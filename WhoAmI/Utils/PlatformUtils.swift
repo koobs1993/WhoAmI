@@ -9,51 +9,37 @@ import AppKit
 enum PlatformUtils {
     #if os(iOS)
     static var systemBackground: UIColor {
-        .systemBackground
+        UIColor.systemBackground
     }
     
-    static func registerForRemoteNotifications() {
-        UIApplication.shared.registerForRemoteNotifications()
+    static var secondarySystemBackground: UIColor {
+        UIColor.secondarySystemBackground
     }
     
-    static func openSystemSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
+    static var label: UIColor {
+        UIColor.label
+    }
+    
+    static var secondaryLabel: UIColor {
+        UIColor.secondaryLabel
     }
     #elseif os(macOS)
     static var systemBackground: NSColor {
-        .windowBackgroundColor
+        NSColor.windowBackgroundColor
     }
     
-    static func registerForRemoteNotifications() {
-        NSApplication.shared.registerForRemoteNotifications()
+    static var secondarySystemBackground: NSColor {
+        NSColor.controlBackgroundColor
     }
     
-    static func openSystemSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
-            NSWorkspace.shared.open(url)
-        }
+    static var label: NSColor {
+        NSColor.labelColor
+    }
+    
+    static var secondaryLabel: NSColor {
+        NSColor.secondaryLabelColor
     }
     #endif
-    
-    static func share(text: String) {
-        #if os(iOS)
-        let activityViewController = UIActivityViewController(
-            activityItems: [text],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first,
-           let rootViewController = window.rootViewController {
-            rootViewController.present(activityViewController, animated: true)
-        }
-        #elseif os(macOS)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        #endif
-    }
 }
 
 // Protocol to handle window operations across platforms

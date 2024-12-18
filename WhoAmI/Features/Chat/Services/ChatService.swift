@@ -1,81 +1,108 @@
 import Foundation
 import Supabase
-import Realtime
 
-class ChatService {
-    private let supabase: SupabaseClient
+class ChatService: BaseService {
     private let realtime: RealtimeClient
     
     init(supabase: SupabaseClient, realtime: RealtimeClient) {
-        self.supabase = supabase
         self.realtime = realtime
+        super.init(supabase: supabase)
     }
     
-    func sendMessage(_ message: ChatMessage) async throws {
-        struct ChatMessageRecord: Codable {
-            let sessionId: UUID
-            let userId: UUID?
-            let role: String
-            let content: String
-            let metadata: [String: String]?
+    func subscribe(_ channelName: String, onMessage: @escaping (ChatMessage) -> Void) -> RealtimeChannel {
+        let channel = realtime.channel(channelName)
+        
+        // Configure channel with proper authentication
+        channel.on("*", filter: .init()) { error in
+            print("Channel error: \(error)")
+        }
+        
+        channel.on("presence", filter: .init()) { _ in
+            print("Channel closed")
+        }
+        
+        channel.on("broadcast", filter: .init()) { _ in
+            print("Joined channel: \(channelName)")
+        }
+        
+        // Subscribe to Postgres changes
+        channel.on(
+            "postgres_changes",
+            filter: .init(
+                event: "*",
+                schema: "public",
+                table: "chat_messages"
+            )
+        ) { message in
+            print("Received message: \(message)")
             
-            enum CodingKeys: String, CodingKey {
-                case sessionId = "session_id"
-                case userId = "user_id"
-                case role
-                case content
-                case metadata
-            }
-        }
-        
-        let record = ChatMessageRecord(
-            sessionId: message.sessionId,
-            userId: message.userId,
-            role: message.role.rawValue,
-            content: message.content,
-            metadata: message.metadata
-        )
-        
-        try await supabase.database
-            .from("chat_messages")
-            .insert(values: record)
-            .execute()
-    }
-    
-    func subscribe(_ topic: String, onMessage: @escaping (ChatMessage) -> Void) -> Channel {
-        guard let channelTopic = ChannelTopic(rawValue: topic) else {
-            fatalError("Invalid channel topic: \(topic)")
-        }
-        
-        let channel = realtime.channel(channelTopic)
-        
-        channel.on(.all) { message in
             do {
-                let data = try JSONSerialization.data(withJSONObject: message.payload)
-                if let chatMessage = try? JSONDecoder().decode(ChatMessage.self, from: data) {
+                let payload = message.payload
+                let data = try JSONSerialization.data(withJSONObject: payload)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                
+                let chatMessage = try decoder.decode(ChatMessage.self, from: data)
+                Task { @MainActor in
                     onMessage(chatMessage)
                 }
             } catch {
                 print("Failed to decode message: \(error)")
+                print("Raw payload: \(message.payload)")
             }
         }
         
-        channel.subscribe()
+        Task {
+            do {
+                // Ensure we have a valid session
+                let session = try await supabase.auth.session
+                print("Subscribing to channel with authenticated session")
+                channel.subscribe()
+            } catch {
+                print("Failed to get session for channel subscription: \(error)")
+            }
+        }
+        
         return channel
     }
     
-    func unsubscribe(_ channel: Channel) {
+    func unsubscribe(_ channel: RealtimeChannel) {
+        print("Unsubscribing from channel")
         channel.unsubscribe()
     }
     
-    func fetchMessages(sessionId: UUID) async throws -> [ChatMessage] {
-        return try await supabase.database
+    func fetchMessages(limit: Int = 50, offset: Int = 0) async throws -> [ChatMessage] {
+        print("Fetching messages with limit: \(limit), offset: \(offset)")
+        let response: PostgrestResponse<[ChatMessage]> = try await supabase
             .from("chat_messages")
             .select()
-            .eq(column: "session_id", value: sessionId.uuidString)
-            .order(column: "created_at")
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .range(from: offset, to: offset + limit - 1)
             .execute()
-            .value
+        
+        print("Fetched \(response.value.count) messages")
+        return response.value
+    }
+    
+    func sendMessage(_ message: ChatMessage) async throws {
+        print("Sending message: \(message)")
+        try await supabase
+            .from("chat_messages")
+            .insert([
+                "session_id": message.sessionId.uuidString,
+                "content": message.content,
+                "role": message.role.rawValue,
+                "user_id": message.userId?.uuidString ?? "",
+                "created_at": formatDate(message.createdAt ?? Date())
+            ])
+            .execute()
+        print("Message sent successfully")
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
     }
 }
- 

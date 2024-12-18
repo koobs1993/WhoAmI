@@ -117,16 +117,26 @@ struct TestDetailView_Previews: PreviewProvider {
     static let testData = PsychTest(
         id: UUID(),
         title: "Sample Test",
-        shortDescription: "This is a sample test description.",
+        description: "A sample test description",
+        shortDescription: "Short description",
         category: .personality,
         imageUrl: nil,
-        durationMinutes: 15,
+        duration: 30,
+        durationMinutes: 30,
         isActive: true,
-        createdAt: Date(),
-        updatedAt: Date(),
+        questions: [
+            PsychTest.TestQuestion(
+                id: UUID(),
+                question: "Sample Question",
+                options: ["Option 1", "Option 2"],
+                correctAnswer: 0,
+                points: 1
+            )
+        ],
         userProgress: nil,
-        questions: nil,
-        benefits: nil
+        benefits: ["Benefit 1", "Benefit 2"],
+        createdAt: Date(),
+        updatedAt: Date()
     )
     
     static var previews: some View {

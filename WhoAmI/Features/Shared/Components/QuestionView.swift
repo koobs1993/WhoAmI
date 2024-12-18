@@ -1,12 +1,7 @@
+#if os(iOS)
+import UIKit
+#endif
 import SwiftUI
-
-protocol QuestionType {
-    var uuid: UUID { get }
-    var questionText: String { get }
-    var questionType: QuestionResponseType { get }
-    var options: [QuestionOption]? { get }
-    var isRequired: Bool { get }
-}
 
 struct SharedQuestionView<T: QuestionType>: View {
     let question: T
@@ -17,77 +12,112 @@ struct SharedQuestionView<T: QuestionType>: View {
             Text(question.questionText)
                 .font(.headline)
             
-            if question.isRequired {
-                Text("*Required")
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-            
             switch question.questionType {
-            case .multipleChoice:
-                if let options = question.options {
-                    ForEach(options) { option in
-                        Button(action: {
-                            response = option.value
-                        }) {
-                            HStack {
-                                Image(systemName: response == option.value ? "checkmark.circle.fill" : "circle")
-                                Text(option.text)
-                            }
-                        }
-                        .foregroundColor(.primary)
-                    }
-                }
-            case .shortAnswer:
-                TextField("Enter your answer", text: $response)
+            case .text, .shortAnswer, .longAnswer:
+                TextField("Your answer", text: $response)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-            case .longAnswer:
-                TextEditor(text: $response)
-                    .frame(height: 100)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    )
-            case .trueFalse:
-                Picker("Select answer", selection: $response) {
-                    Text("True").tag("true")
-                    Text("False").tag("false")
-                }
-                .pickerStyle(SegmentedPickerStyle())
-            case .rating:
-                HStack {
-                    ForEach(1...5, id: \.self) { rating in
-                        Button(action: {
-                            response = String(rating)
-                        }) {
-                            Image(systemName: Int(response) ?? 0 >= rating ? "star.fill" : "star")
-                        }
-                        .foregroundColor(.yellow)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.sentences)
+                    #endif
+                
+            case .multipleChoice, .singleChoice:
+                if let options = question.questionOptions {
+                    ForEach(options) { option in
+                        RadioButton(
+                            title: option.text,
+                            isSelected: Binding(
+                                get: { response == option.value },
+                                set: { if $0 { response = option.value } }
+                            )
+                        )
                     }
                 }
+                
+            case .date:
+                DatePicker(
+                    "Select date",
+                    selection: Binding(
+                        get: { Date(timeIntervalSince1970: Double(response) ?? Date().timeIntervalSince1970) },
+                        set: { response = String($0.timeIntervalSince1970) }
+                    ),
+                    displayedComponents: [.date]
+                )
+                
+            case .number:
+                TextField("Enter number", text: $response)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    #if os(iOS)
+                    .keyboardType(.numberPad)
+                    #endif
             }
         }
         .padding()
     }
 }
 
+struct RadioButton: View {
+    let title: String
+    @Binding var isSelected: Bool
+    
+    var body: some View {
+        Button(action: { isSelected.toggle() }) {
+            HStack {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                Text(title)
+            }
+        }
+        .foregroundColor(.primary)
+    }
+}
+
 // Preview provider
 struct SharedQuestionView_Previews: PreviewProvider {
     struct PreviewQuestion: QuestionType {
-        let uuid = UUID()
-        let questionText = "Sample Question"
-        let questionType = QuestionResponseType.multipleChoice
-        let options: [QuestionOption]? = [
-            QuestionOption(id: 1, questionId: 1, text: "Option 1", value: "1", order: 1),
-            QuestionOption(id: 2, questionId: 1, text: "Option 2", value: "2", order: 2)
-        ]
-        let isRequired = true
+        let id: Int = 1
+        let questionText: String
+        let questionType: QuestionResponseType
+        let isRequired: Bool
+        let options: [QuestionOption]?
+        
+        init(
+            questionText: String = "Sample Question",
+            questionType: QuestionResponseType = .multipleChoice,
+            isRequired: Bool = true,
+            options: [QuestionOption]? = [
+                QuestionOption(id: 1, questionId: 1, text: "Option 1", value: "1", order: 1),
+                QuestionOption(id: 2, questionId: 1, text: "Option 2", value: "2", order: 2)
+            ]
+        ) {
+            self.questionText = questionText
+            self.questionType = questionType
+            self.isRequired = isRequired
+            self.options = options
+        }
     }
     
     static var previews: some View {
-        SharedQuestionView(
-            question: PreviewQuestion(),
-            response: .constant("")
-        )
+        VStack {
+            SharedQuestionView(question: PreviewQuestion(), response: .constant(""))
+                .previewDisplayName("Multiple Choice")
+            
+            SharedQuestionView(
+                question: PreviewQuestion(questionType: .shortAnswer, options: nil),
+                response: .constant("")
+            )
+            .previewDisplayName("Short Answer")
+            
+            SharedQuestionView(
+                question: PreviewQuestion(questionType: .number, options: nil),
+                response: .constant("42")
+            )
+            .previewDisplayName("Number")
+            
+            SharedQuestionView(
+                question: PreviewQuestion(questionType: .date, options: nil),
+                response: .constant("\(Date().timeIntervalSince1970)")
+            )
+            .previewDisplayName("Date")
+        }
+        .padding()
     }
-} 
+}

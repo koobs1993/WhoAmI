@@ -2,11 +2,11 @@ import SwiftUI
 import Supabase
 
 struct TestSessionView: View {
-    @StateObject private var viewModel: TestSessionViewModel
+    @ObservedObject private var viewModel: TestSessionViewModel
     @Environment(\.dismiss) private var dismiss
     
     init(supabase: SupabaseClient, userId: UUID, test: PsychTest) {
-        _viewModel = StateObject(wrappedValue: TestSessionViewModel(supabase: supabase, userId: userId, test: test))
+        self.viewModel = TestSessionViewModel(supabase: supabase, userId: userId, test: test)
     }
     
     var body: some View {
@@ -38,8 +38,11 @@ struct TestSessionView: View {
             }
         } else if viewModel.questions.isEmpty {
             startView
-        } else if let results = viewModel.testResults {
-            TestResultsView(results: results)
+        } else if viewModel.isComplete {
+            TestResultsView(
+                score: Double(viewModel.answers.count),
+                totalQuestions: viewModel.questions.count
+            )
         } else {
             questionView
         }
@@ -48,7 +51,7 @@ struct TestSessionView: View {
     private var startView: some View {
         VStack(spacing: 24) {
             if let imageUrl = viewModel.test.imageUrl {
-                AsyncImage(url: URL(string: imageUrl)) { image in
+                AsyncImage(url: imageUrl) { image in
                     image
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -83,12 +86,8 @@ struct TestSessionView: View {
                 QuestionView(
                     question: question,
                     response: Binding(
-                        get: { viewModel.responses[question.questionId] ?? "" },
-                        set: { newValue in
-                            Task {
-                                try? await viewModel.submitResponse(newValue)
-                            }
-                        }
+                        get: { viewModel.answers[question.id.uuidString] ?? "" },
+                        set: { viewModel.submitAnswer($0) }
                     )
                 )
             }
@@ -100,4 +99,4 @@ extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
-} 
+}
