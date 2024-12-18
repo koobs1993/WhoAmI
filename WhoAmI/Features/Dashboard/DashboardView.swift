@@ -3,44 +3,66 @@ import Supabase
 
 @MainActor
 class DashboardViewModel: ObservableObject {
-    @Published var courses: [UserCourse] = []
+    @Published var courses: [Course] = []
     @Published var isLoading = false
     @Published var error: Error?
     
-    private let supabase: SupabaseClient
-    private let userId: UUID
+    let supabase: SupabaseClient
+    let userId: UUID
     
     init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
         self.userId = userId
     }
     
-    func fetchDashboardData() async {
+    @MainActor
+    func loadCourses() async {
         isLoading = true
+        error = nil
+        
         do {
-            let query = supabase.database
+            let response: PostgrestResponse<[CourseData]> = try await supabase.database
                 .from("user_courses")
-                .select(columns: "*, course:courses(*)")
-                .eq(column: "user_id", value: userId)
+                .select(columns: """
+                    *,
+                    course:courses (
+                        id,
+                        title,
+                        description,
+                        image_url,
+                        duration,
+                        difficulty,
+                        prerequisites,
+                        is_active,
+                        created_at,
+                        updated_at
+                    )
+                """)
+                .eq(column: "user_id", value: userId.uuidString)
+                .execute()
             
-            let response: PostgrestResponse<[UserCourse]> = try await query.execute()
-            let courseData = response.value ?? []
-            
-            await MainActor.run {
-                self.courses = courseData
-                self.isLoading = false
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+            let userCourses = try decoder.decode([CourseData].self, from: data)
+            courses = userCourses.map { courseData in
+                Course(
+                    id: courseData.course.id,
+                    title: courseData.course.title,
+                    description: courseData.course.description,
+                    imageUrl: courseData.course.imageUrl,
+                    estimatedDuration: courseData.course.duration,
+                    lessons: [],
+                    createdAt: courseData.course.createdAt,
+                    updatedAt: courseData.course.updatedAt
+                )
             }
         } catch {
-            await MainActor.run {
-                self.error = error
-                self.isLoading = false
-            }
+            self.error = error
+            print("Error loading courses: \(error)")
         }
-    }
-    
-    func calculateCourseProgress(_ progress: CourseProgress?) -> Double {
-        guard let progress = progress else { return 0.0 }
-        return Double(progress.completedLessons) / Double(progress.totalLessons)
+        
+        isLoading = false
     }
 }
 
@@ -51,103 +73,50 @@ struct DashboardView: View {
         _viewModel = StateObject(wrappedValue: DashboardViewModel(supabase: supabase, userId: userId))
     }
     
-    private func loadUserCourses() async {
-        do {
-            let query = viewModel.supabase.database
-                .from("user_courses")
-                .select("*")
-                .eq("user_id", value: viewModel.userId.uuidString)
-            
-            let response: PostgrestResponse<[UserCourse]> = try await query.execute()
-            let courseData = response.value ?? []
-            
-            await MainActor.run {
-                viewModel.userCourses = courseData
-            }
-        } catch {
-            print("Error loading user courses: \(error)")
-        }
-    }
-    
-    private func calculateCourseProgress(_ progress: CourseProgress?) -> Double {
-        guard let progress = progress else { return 0.0 }
-        return progress.progressPercentage
-    }
-    
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 if viewModel.isLoading {
                     ProgressView()
                 } else {
-                    // Courses Section
-                    if !viewModel.courses.isEmpty {
-                        VStack(alignment: .leading) {
-                            Text("Your Courses")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .padding(.horizontal)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(viewModel.courses) { userCourse in
-                                        CourseView(
-                                            course: userCourse.course,
-                                            progress: viewModel.calculateCourseProgress(userCourse.progress)
-                                        )
-                                    }
-                                }
-                                .padding(.horizontal)
-                            }
-                        }
+                    ForEach(viewModel.courses) { course in
+                        CourseCard(course: course)
                     }
                 }
             }
-            .padding(.vertical)
+            .padding()
         }
         .navigationTitle("Dashboard")
         .task {
-            await loadUserCourses()
-        }
-        .refreshable {
-            await loadUserCourses()
+            await viewModel.loadCourses()
         }
     }
 }
 
-struct CourseView: View {
+struct CourseCard: View {
     let course: Course
-    let progress: Double
     
     var body: some View {
-        VStack(alignment: .leading) {
-            if let imageUrl = course.imageUrl {
-                AsyncImage(url: URL(string: imageUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.gray.opacity(0.2)
-                }
-                .frame(height: 120)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            
+        VStack(alignment: .leading, spacing: 8) {
             Text(course.title)
                 .font(.headline)
+            
+            Text(course.description)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
                 .lineLimit(2)
             
-            ProgressView(value: progress)
-                .tint(.blue)
-            
-            Text("\(Int(progress * 100))% Complete")
-                .font(.caption)
+            if let duration = course.estimatedDuration {
+                HStack {
+                    Image(systemName: "clock")
+                    Text("\(duration) minutes")
+                        .font(.caption)
+                }
                 .foregroundColor(.secondary)
+            }
         }
-        .frame(width: 200)
         .padding()
-        .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(12)
-        .shadow(radius: 5)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(10)
     }
 } 

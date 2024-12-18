@@ -1,6 +1,6 @@
 import Foundation
 
-enum Education: String, Codable, CaseIterable {
+public enum Education: String, Codable, CaseIterable, Sendable {
     case secondaryGeneral = "secondary_general"
     case secondaryVocational = "secondary_vocational"
     case incompleteHigher = "incomplete_higher"

@@ -1,6 +1,23 @@
 import Foundation
 import Supabase
 
+// MARK: - Cache Entry
+class CacheEntry<T> {
+    let value: T
+    let timestamp: Date
+    let duration: TimeInterval
+    
+    init(value: T, timestamp: Date = Date(), duration: TimeInterval = 300) {
+        self.value = value
+        self.timestamp = timestamp
+        self.duration = duration
+    }
+    
+    var isExpired: Bool {
+        return Date().timeIntervalSince(timestamp) > duration
+    }
+}
+
 enum ServiceError: LocalizedError {
     case unauthorized
     case validationError(String)
@@ -25,10 +42,17 @@ enum ServiceError: LocalizedError {
 }
 
 class BaseService {
-    var supabase: SupabaseClient
+    let supabase: SupabaseClient
     
-    init(supabase: SupabaseClient = Config.supabaseClient) {
+    init(supabase: SupabaseClient) {
         self.supabase = supabase
+    }
+    
+    // MARK: - Error Handling
+    
+    func handleError(_ error: Error) -> Error {
+        // Add custom error handling logic here
+        return error
     }
     
     // MARK: - User Validation
@@ -40,47 +64,50 @@ class BaseService {
     
     // MARK: - Database Operations
     
-    func select<T: Decodable>(from table: String) async throws -> PostgrestFilterBuilder<T> {
-        return supabase.database.from(table).select()
+    func select<T: Decodable>(from table: String) async throws -> PostgrestResponse<[T]> {
+        return try await supabase.database
+            .from(table)
+            .select()
+            .execute()
     }
     
-    func selectOne<T: Decodable>(from table: String) async throws -> T? {
+    func selectSingle<T: Decodable>(from table: String) async throws -> T? {
         let response: PostgrestResponse<[T]> = try await supabase.database
             .from(table)
             .select()
-            .limit(1)
+            .limit(count: 1)
             .execute()
         
-        return response.value.first
+        return try response.value.first
     }
     
-    func insert<T: Encodable & Sendable>(into table: String, values: T) async throws {
+    func insert<T: Encodable & Sendable>(table: String, values: T) async throws {
         try await supabase.database
             .from(table)
-            .insert(values)
+            .insert(values: values)
             .execute()
     }
     
-    func update<T: Encodable & Sendable>(table: String, set values: T, matches: [String: AnyPostgrestFilterValue]) async throws {
+    func update<T: Encodable>(table: String, values: T, matches: [String: URLQueryRepresentable]) async throws {
         try await supabase.database
             .from(table)
-            .update(values)
-            .match(matches)
+            .update(values: values)
+            .match(query: matches)
             .execute()
     }
     
-    func upsert<T: Encodable & Sendable>(into table: String, values: T) async throws {
+    func upsert<T: Encodable>(table: String, values: T) async throws {
         try await supabase.database
             .from(table)
-            .upsert(values)
+            .upsert(values: values)
             .execute()
     }
     
-    func delete(from table: String, matches: [String: AnyPostgrestFilterValue]) async throws {
+    func delete(from table: String, matches: [String: URLQueryRepresentable]) async throws {
         try await supabase.database
             .from(table)
             .delete()
-            .match(matches)
+            .match(query: matches)
             .execute()
     }
     
@@ -91,33 +118,20 @@ class BaseService {
         cache.totalCostLimit = 50 * 1024 * 1024 // 50 MB limit
     }
     
-    func getCachedValue<T>(from cache: NSCache<NSString, CacheEntry<T>>, forKey key: String, duration: TimeInterval) -> T? {
-        guard let entry = cache.object(forKey: key as NSString) else { return nil }
-        guard !entry.isExpired(duration: duration) else {
-            cache.removeObject(forKey: key as NSString)
-            return nil
+    func clearCache<T>(_ cache: NSCache<NSString, CacheEntry<T>>) {
+        cache.removeAllObjects()
+    }
+    
+    func getCachedValue<T: Decodable>(from cache: NSCache<NSString, CacheEntry<T>>, forKey key: String) -> T? {
+        let cacheKey = key as NSString
+        if let cached = cache.object(forKey: cacheKey), !cached.isExpired {
+            return cached.value
         }
-        return entry.value
+        return nil
     }
     
-    func setCachedValue<T>(_ value: T, in cache: NSCache<NSString, CacheEntry<T>>, forKey key: String) {
-        let entry = CacheEntry(value: value)
-        cache.setObject(entry, forKey: key as NSString)
-    }
-}
-
-// MARK: - Cache Entry
-
-class CacheEntry<T> {
-    let value: T
-    let timestamp: Date
-    
-    init(value: T, timestamp: Date = Date()) {
-        self.value = value
-        self.timestamp = timestamp
-    }
-    
-    func isExpired(duration: TimeInterval) -> Bool {
-        return Date().timeIntervalSince(timestamp) > duration
+    func setCachedValue<T>(_ value: T, in cache: NSCache<NSString, CacheEntry<T>>, forKey key: String, duration: TimeInterval = 300) {
+        let cacheKey = key as NSString
+        cache.setObject(CacheEntry(value: value, duration: duration), forKey: cacheKey)
     }
 } 

@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 struct TestSessionView: View {
     @StateObject private var viewModel: TestSessionViewModel
@@ -12,26 +13,35 @@ struct TestSessionView: View {
         Group {
             if viewModel.isLoading {
                 ProgressView()
-            } else if let error = viewModel.error {
-                ErrorView(error: error) {
-                    Task {
-                        await viewModel.startTest()
-                    }
-                }
-            } else if viewModel.questions.isEmpty {
-                startView
-            } else if let results = viewModel.testResults {
-                TestResultsView(results: results, test: viewModel.test)
             } else {
-                questionView
+                content
             }
         }
         .navigationTitle(viewModel.test.title)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task {
             if viewModel.questions.isEmpty {
-                await viewModel.startTest()
+                try? await viewModel.startTest()
             }
+        }
+    }
+    
+    @ViewBuilder
+    private var content: some View {
+        if let error = viewModel.error {
+            ErrorView(error: error) {
+                Task {
+                    try? await viewModel.startTest()
+                }
+            }
+        } else if viewModel.questions.isEmpty {
+            startView
+        } else if let results = viewModel.testResults {
+            TestResultsView(results: results)
+        } else {
+            questionView
         }
     }
     
@@ -50,13 +60,13 @@ struct TestSessionView: View {
                 }
             }
             
-            Text(viewModel.test.description ?? "")
+            Text(viewModel.test.description)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
             
             Button("Start Test") {
                 Task {
-                    await viewModel.startTest()
+                    try? await viewModel.startTest()
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -71,14 +81,15 @@ struct TestSessionView: View {
             
             if let question = viewModel.questions[safe: viewModel.currentQuestionIndex] {
                 QuestionView(
-                    question: question.questionText,
-                    options: question.options?.map { $0.optionText } ?? [],
-                    selectedOption: viewModel.responses[question.questionId],
-                    onOptionSelected: { option in
-                        Task {
-                            await viewModel.submitResponse(option, forQuestion: question.questionId)
+                    question: question,
+                    response: Binding(
+                        get: { viewModel.responses[question.questionId] ?? "" },
+                        set: { newValue in
+                            Task {
+                                try? await viewModel.submitResponse(newValue)
+                            }
                         }
-                    }
+                    )
                 )
             }
         }

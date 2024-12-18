@@ -1,120 +1,148 @@
+import Foundation
 import StoreKit
 import Supabase
-import Foundation
+
+enum AuthenticationError: Error {
+    case notAuthenticated
+}
+
+struct PurchaseRecord: Codable {
+    let transactionId: String
+    let productId: String
+    let userId: String
+    let purchaseDate: Date
+    let quantity: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case productId = "product_id"
+        case userId = "user_id"
+        case purchaseDate = "purchase_date"
+        case quantity
+    }
+}
 
 @MainActor
-class StoreKitManager: BaseService {
-    static let shared = StoreKitManager()
+class StoreKitManager: BaseService, @unchecked Sendable {
+    static let shared: StoreKitManager = {
+        return StoreKitManager(supabase: Config.supabaseClient)
+    }()
+    
     private let cache = NSCache<NSString, CacheEntry<[SubscriptionStatus]>>()
     private let cacheDuration: TimeInterval = 300 // 5 minutes
     
-    override private init() {
-        super.init()
-        setupCache(cache)
-        // Start listening for transactions
-        Task {
-            await observeTransactions()
+    private override init(supabase: SupabaseClient) {
+        super.init(supabase: supabase)
+        Task { @MainActor in
+            setupCache(cache)
+            await listenForTransactions()
         }
     }
     
-    func purchase(_ product: Product) async throws -> Transaction? {
-        let result = try await product.purchase()
-        
-        switch result {
-        case .success(let verification):
-            let transaction = try checkVerified(verification)
-            await updateSubscriptionStatus(transaction: transaction)
-            await transaction.finish()
-            return transaction
-            
-        case .userCancelled:
-            return nil
-            
-        case .pending:
-            throw StoreError.pending
-            
-        @unknown default:
-            throw StoreError.unknown
-        }
-    }
-    
-    private func observeTransactions() async {
-        for await result in Transaction.updates {
+    private func listenForTransactions() async {
+        for await transaction in Transaction.updates {
             do {
-                let transaction = try checkVerified(result)
-                await updateSubscriptionStatus(transaction: transaction)
-                await transaction.finish()
+                try await handleTransaction(transaction)
             } catch {
-                print("Transaction verification failed: \(error)")
+                print("Failed to handle transaction: \(error.localizedDescription)")
             }
         }
     }
     
-    private func updateSubscriptionStatus(transaction: Transaction) async {
-        do {
-            let status: SubscriptionStatus = transaction.revocationDate == nil ? .active : .canceled
-            
-            try await upsert(into: "subscriptions", values: [
-                "user_id": supabase.auth.session?.user.id ?? "",
-                "product_id": transaction.productID,
-                "status": status.rawValue,
-                "original_transaction_id": transaction.originalID,
-                "purchase_date": transaction.purchaseDate,
-                "expires_date": transaction.expirationDate,
-                "is_trial_period": false,
-                "is_in_intro_offer_period": false
-            ])
-            
-            // Update UserDefaults
-            UserDefaults.standard.set(status == .active, forKey: "isSubscribed")
-            
-            // Invalidate cache
-            invalidateCache()
-            
-        } catch {
-            print("Error updating subscription status: \(error)")
+    private func handleTransaction(_ verificationResult: VerificationResult<Transaction>) async throws {
+        guard case .verified(let transaction) = verificationResult else {
+            throw StoreError.verificationFailed
         }
-    }
-    
-    func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .unverified:
-            throw StoreError.verification
-        case .verified(let safe):
-            return safe
+
+        let session = try await supabase.auth.session
+        let status: SubscriptionStatus = transaction.revocationDate == nil ? .active : .canceled
+        
+        struct SubscriptionRecord: Codable {
+            let userId: String
+            let productId: String
+            let originalTransactionId: String
+            let webOrderLineItemId: String?
+            let purchaseDate: Date
+            let expirationDate: Date?
+            let status: String
+            
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id"
+                case productId = "product_id"
+                case originalTransactionId = "original_transaction_id"
+                case webOrderLineItemId = "web_order_line_item_id"
+                case purchaseDate = "purchase_date"
+                case expirationDate = "expiration_date"
+                case status
+            }
         }
-    }
-    
-    func restorePurchases() async throws {
-        try await AppStore.sync()
+        
+        let record = SubscriptionRecord(
+            userId: session.user.id.uuidString,
+            productId: transaction.productID,
+            originalTransactionId: String(transaction.originalID),
+            webOrderLineItemId: transaction.webOrderLineItemID,
+            purchaseDate: transaction.purchaseDate,
+            expirationDate: transaction.expirationDate,
+            status: status.rawValue
+        )
+        
+        try await supabase.database
+            .from("subscriptions")
+            .upsert(values: record)
+            .execute()
+        
+        let purchase = PurchaseRecord(
+            transactionId: String(transaction.id),
+            productId: transaction.productID,
+            userId: session.user.id.uuidString,
+            purchaseDate: transaction.purchaseDate,
+            quantity: 1
+        )
+        
+        try await supabase.database
+            .from("purchases")
+            .insert(values: purchase)
+            .execute()
     }
     
     func recordPurchase(_ transaction: Transaction) async throws {
-        try await insert(into: "purchases", values: [
-            "transaction_id": transaction.id,
-            "product_id": transaction.productID,
-            "user_id": supabase.auth.session?.user.id ?? "",
-            "purchase_date": transaction.purchaseDate,
-            "quantity": transaction.quantity
-        ])
-    }
-    
-    private func invalidateCache() {
-        cache.removeObject(forKey: "subscription_status" as NSString)
+        guard let session = try? await supabase.auth.session else {
+            throw AuthenticationError.notAuthenticated
+        }
+        
+        let record = PurchaseRecord(
+            transactionId: String(transaction.id),
+            productId: transaction.productID,
+            userId: session.user.id.uuidString,
+            purchaseDate: transaction.purchaseDate,
+            quantity: 1
+        )
+        
+        try await supabase.database
+            .from("purchases")
+            .insert(values: record)
+            .execute()
     }
 }
 
-enum StoreError: LocalizedError {
-    case pending
-    case verification
+enum StoreKitError: LocalizedError, Sendable {
+    case verificationFailed
+    case purchaseFailed
+    case userCancelled
+    case networkError
     case unknown
     
     var errorDescription: String? {
         switch self {
-        case .pending:
-            return "Purchase is pending"
-        case .verification:
-            return "Purchase verification failed"
+        case .verificationFailed:
+            return "Transaction verification failed"
+        case .purchaseFailed:
+            return "Purchase failed"
+        case .userCancelled:
+            return "Purchase was cancelled"
+        case .networkError:
+            return "Network error occurred"
         case .unknown:
             return "An unknown error occurred"
         }

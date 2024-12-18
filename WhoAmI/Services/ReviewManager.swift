@@ -1,134 +1,125 @@
 import Foundation
-import Supabase
 import StoreKit
-import SwiftUI
-import AppKit
+import Supabase
+#if os(iOS)
+import UIKit
+#endif
+
+struct ReviewHistory: Codable, Sendable {
+    let id: UUID
+    let userId: UUID
+    let reviewedAt: Date
+    let appVersion: String
+    let osVersion: String
+    let deviceModel: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case reviewedAt = "reviewed_at"
+        case appVersion = "app_version"
+        case osVersion = "os_version"
+        case deviceModel = "device_model"
+    }
+}
 
 @MainActor
-class ReviewPromptManager: BaseService, ObservableObject {
-    @Published var shouldShowPrompt = false
+class ReviewPromptManager: ObservableObject, @unchecked Sendable {
+    static let shared = ReviewPromptManager(supabase: Config.supabaseClient)
     
-    private let userDefaults = UserDefaults.standard
+    private let supabase: SupabaseClient
     private let minimumActionsBeforePrompt = 3
     private let daysBeforeReprompt = 60
     private let cache = NSCache<NSString, CacheEntry<[ReviewHistory]>>()
     private let cacheDuration: TimeInterval = 3600 // 1 hour
+    private var reviewCount: Int = 0
     
-    private enum UserDefaultsKeys {
-        static let lastReviewPromptDate = "lastReviewPromptDate"
-        static let hasSubmittedReview = "hasSubmittedReview"
-        static let actionCount = "userActionCount"
+    init(supabase: SupabaseClient) {
+        self.supabase = supabase
+        setupCache()
     }
     
-    override init(supabase: SupabaseClient = Config.supabaseClient) {
-        super.init(supabase: supabase)
-        setupCache(cache)
+    private func setupCache() {
+        cache.countLimit = 100
+        cache.totalCostLimit = 50 * 1024 * 1024 // 50 MB
     }
     
-    func incrementActionCount() {
-        let currentCount = userDefaults.integer(forKey: UserDefaultsKeys.actionCount)
-        userDefaults.set(currentCount + 1, forKey: UserDefaultsKeys.actionCount)
-        checkIfShouldPrompt()
-    }
-    
-    private func checkIfShouldPrompt() {
-        // Don't show if user has already reviewed
-        guard !userDefaults.bool(forKey: UserDefaultsKeys.hasSubmittedReview) else { return }
-        
-        let actionCount = userDefaults.integer(forKey: UserDefaultsKeys.actionCount)
-        guard actionCount >= minimumActionsBeforePrompt else { return }
-        
-        if let lastPromptDate = userDefaults.object(forKey: UserDefaultsKeys.lastReviewPromptDate) as? Date {
-            let daysSinceLastPrompt = Calendar.current.dateComponents([.day], from: lastPromptDate, to: Date()).day ?? 0
-            shouldShowPrompt = daysSinceLastPrompt >= daysBeforeReprompt
-        } else {
-            shouldShowPrompt = true
-        }
-    }
-    
-    func recordReviewSubmission() async throws {
-        guard let userId = supabase.auth.session?.user.id else {
-            throw AuthError.notAuthenticated
-        }
-        
-        let updateData: [String: Any] = [
-            "last_review_date": Date(),
-            "review_count": reviewCount + 1
-        ]
-        
-        try await supabase
-            .from("user_profiles")
-            .update(updateData)
-            .eq("user_id", value: userId)
-            .execute()
-        
+    func incrementCount() {
         reviewCount += 1
+        checkAndPromptForReview()
     }
     
-    func fetchReviewHistory() async throws -> [ReviewHistory] {
-        if let history = getCachedValue(from: cache, forKey: "review_history", duration: cacheDuration) {
-            return history
-        }
+    private func checkAndPromptForReview() {
+        guard reviewCount >= minimumActionsBeforePrompt else { return }
         
-        do {
-            let query = select(from: "review_history")
-                .order("reviewed_at", ascending: false)
-            
-            let result = try await query.execute()
-            let history: [ReviewHistory] = try result.value
-            
-            setCachedValue(history, in: cache, forKey: "review_history")
-            return history
-        } catch {
-            throw handleError(error)
-        }
-    }
-    
-    // MARK: - Helper Methods
-    
-    func requestReview() {
         Task {
             do {
-                try await recordReviewSubmission()
+                let history = try await fetchReviewHistory()
+                let lastReview = history.last
+                
+                let calendar = Calendar.current
+                if let lastReviewDate = lastReview?.reviewedAt {
+                    let daysSinceLastReview = calendar.dateComponents([.day], from: lastReviewDate, to: Date()).day ?? 0
+                    guard daysSinceLastReview >= daysBeforeReprompt else { return }
+                }
+                
+                await requestReview()
+                try await saveReviewHistory()
+                reviewCount = 0
             } catch {
-                print("Failed to record review submission: \(error.localizedDescription)")
+                print("Failed to check review history:", error)
             }
         }
     }
     
-    // Helper method to reset review status (for testing)
-    func resetReviewStatus() {
-        userDefaults.removeObject(forKey: UserDefaultsKeys.lastReviewPromptDate)
-        userDefaults.removeObject(forKey: UserDefaultsKeys.hasSubmittedReview)
-        userDefaults.removeObject(forKey: UserDefaultsKeys.actionCount)
-        invalidateCache()
+    func fetchReviewHistory() async throws -> [ReviewHistory] {
+        if let cached = cache.object(forKey: "review_history" as NSString)?.value {
+            return cached
+        }
+        
+        let response = try await supabase.database
+            .from("review_history")
+            .select()
+            .order(column: "reviewed_at", ascending: false)
+            .execute()
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        let history = try decoder.decode([ReviewHistory].self, from: data)
+        
+        cache.setObject(CacheEntry(value: history), forKey: "review_history" as NSString)
+        return history
     }
     
-    // MARK: - Cache Management
-    
-    private func invalidateCache() {
-        cache.removeObject(forKey: "review_history" as NSString)
+    public func saveReviewHistory() async throws {
+        guard let session = try? await supabase.auth.session else { return }
+        
+        let record = ReviewHistory(
+            id: UUID(),
+            userId: session.user.id,
+            reviewedAt: Date(),
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown",
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            deviceModel: "macOS Device"
+        )
+        
+        try await supabase.database
+            .from("review_history")
+            .insert(values: record)
+            .execute()
+        
+        cache.removeAllObjects()
     }
-}
-
-// MARK: - Models
-
-struct ReviewHistory: Codable, Identifiable {
-    let id: Int
-    let userId: UUID
-    let reviewedAt: Date
-    let platform: String
-    let appVersion: String
-    let createdAt: Date
-    let updatedAt: Date
     
-    enum CodingKeys: String, CodingKey {
-        case id = "review_id"
-        case userId = "user_id"
-        case reviewedAt = "reviewed_at"
-        case platform
-        case appVersion = "app_version"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
+    private func requestReview() async {
+        #if os(iOS)
+        guard let windowScene = await UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
+        await SKStoreReviewController.requestReview(in: windowScene)
+        #else
+        if NSApplication.shared.windows.first != nil {
+            SKStoreReviewController.requestReview()
+        }
+        #endif
     }
 } 

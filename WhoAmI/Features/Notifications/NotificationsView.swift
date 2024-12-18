@@ -3,7 +3,6 @@ import Supabase
 
 struct NotificationsView: View {
     @StateObject private var viewModel: NotificationsViewModel
-    @State private var showingSettings = false
     
     init(supabase: SupabaseClient) {
         _viewModel = StateObject(wrappedValue: NotificationsViewModel(supabase: supabase))
@@ -11,62 +10,92 @@ struct NotificationsView: View {
     
     var body: some View {
         NavigationView {
-            Group {
+            ZStack {
                 if viewModel.isLoading {
                     ProgressView()
                 } else if viewModel.notifications.isEmpty {
-                    EmptyStateView()
+                    NotificationsEmptyStateView()
                 } else {
                     List {
                         ForEach(viewModel.notifications) { notification in
-                            NavigationLink {
-                                NotificationDetailView(notification: notification)
-                            } label: {
+                            NavigationLink(destination: NotificationDetailView(notification: notification, onAction: handleNotificationAction)) {
                                 NotificationRow(notification: notification)
                             }
                         }
-                        .onDelete { indexSet in
-                            Task {
-                                if let index = indexSet.first {
-                                    try? await viewModel.deleteNotification(viewModel.notifications[index])
-                                }
-                            }
-                        }
-                    }
-                    .refreshable {
-                        try? await viewModel.loadNotifications()
                     }
                 }
             }
             .navigationTitle("Notifications")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if !viewModel.notifications.isEmpty {
-                        Button {
-                            Task {
-                                try? await viewModel.markAllAsRead()
-                            }
-                        } label: {
-                            Text("Mark All Read")
-                        }
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gear")
-                    }
+            .task {
+                do {
+                    try await viewModel.fetchNotifications()
+                } catch {
+                    print("Error loading notifications: \(error)")
                 }
             }
         }
-        .task {
-            try? await viewModel.loadNotifications()
+    }
+    
+    private func handleNotificationAction(_ action: NotificationAction) {
+        Task {
+            switch action.type {
+            case .openTest:
+                if let testId = action.metadata["testId"],
+                   let url = URL(string: "whoami://test/\(testId)") {
+                    #if os(iOS)
+                    UIApplication.shared.open(url)
+                    #else
+                    NSWorkspace.shared.open(url)
+                    #endif
+                }
+            case .openCourse:
+                if let courseId = action.metadata["courseId"],
+                   let url = URL(string: "whoami://course/\(courseId)") {
+                    #if os(iOS)
+                    UIApplication.shared.open(url)
+                    #else
+                    NSWorkspace.shared.open(url)
+                    #endif
+                }
+            case .openChat:
+                if let chatId = action.metadata["chatId"],
+                   let url = URL(string: "whoami://chat/\(chatId)") {
+                    #if os(iOS)
+                    UIApplication.shared.open(url)
+                    #else
+                    NSWorkspace.shared.open(url)
+                    #endif
+                }
+            case .openURL:
+                if let urlString = action.metadata["url"],
+                   let url = URL(string: urlString) {
+                    #if os(iOS)
+                    UIApplication.shared.open(url)
+                    #else
+                    NSWorkspace.shared.open(url)
+                    #endif
+                }
+            }
         }
-        .sheet(isPresented: $showingSettings) {
-            NotificationSettingsView(viewModel: viewModel)
+    }
+}
+
+struct NotificationsEmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bell.slash")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+            
+            Text("No Notifications")
+                .font(.headline)
+            
+            Text("You don't have any notifications yet.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .padding()
     }
 }
 
@@ -74,47 +103,30 @@ struct NotificationRow: View {
     let notification: UserNotification
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(notification.isRead ? Color.gray.opacity(0.3) : Color.blue)
-                .frame(width: 12, height: 12)
-                .padding(.top, 4)
-            
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: notification.type.icon)
+                    .foregroundColor(notification.type.color)
                 Text(notification.title)
                     .font(.headline)
-                    .lineLimit(1)
-                
-                Text(notification.message)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                
                 Spacer()
-                
-                Text(notification.createdAt, style: .relative)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if !notification.read {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 8, height: 8)
+                }
             }
-        }
-        .padding(.vertical, 8)
-    }
-}
-
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bell.slash")
-                .font(.system(size: 48))
-                .foregroundColor(.gray)
             
-            Text("No Notifications")
-                .font(.headline)
-            
-            Text("You're all caught up!")
+            Text(notification.message)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .lineLimit(2)
+            
+            Text(notification.createdAt, style: .relative)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
+        .padding(.vertical, 8)
     }
 }
 

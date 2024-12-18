@@ -1,44 +1,39 @@
 import Foundation
 
-struct Course: Codable, Identifiable {
-    let id: UUID
-    let title: String
-    let description: String
-    let imageUrl: String?
-    let difficulty: CourseDifficulty
-    let lessons: [Lesson]
-    let createdAt: Date
-    let updatedAt: Date
-    var userProgress: CourseProgress?
+// MARK: - Course Models
+public struct Course: Identifiable, Codable {
+    public let id: Int
+    public let title: String
+    public let description: String
+    public let imageUrl: String?
+    public let estimatedDuration: Int?
+    public var lessons: [Lesson]?
+    public let createdAt: Date
+    public let updatedAt: Date
     
-    var lessonCount: Int {
-        lessons.count
-    }
-    
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case id
         case title
         case description
         case imageUrl = "image_url"
-        case difficulty
+        case estimatedDuration = "estimated_duration"
         case lessons
         case createdAt = "created_at"
         case updatedAt = "updated_at"
-        case userProgress = "user_progress"
     }
 }
 
-struct Lesson: Codable, Identifiable {
-    let id: Int
-    let courseId: Int
-    let title: String
-    let content: String?
-    let order: Int
-    var status: LessonStatus
-    let createdAt: Date
-    let updatedAt: Date
+public struct Lesson: Identifiable, Codable {
+    public let id: Int
+    public let courseId: Int
+    public let title: String
+    public let content: String
+    public let order: Int
+    public var status: LessonStatus
+    public let createdAt: Date
+    public let updatedAt: Date
     
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case id
         case courseId = "course_id"
         case title
@@ -50,97 +45,21 @@ struct Lesson: Codable, Identifiable {
     }
 }
 
-enum CourseDifficulty: String, Codable {
-    case beginner = "beginner"
-    case intermediate = "intermediate"
-    case advanced = "advanced"
-}
-
-struct LessonResource: Codable, Identifiable {
-    let id: Int
-    let lessonId: Int
-    let title: String
-    let type: ResourceType
-    let url: String
-    let order: Int
-    let isActive: Bool
-    let createdAt: Date
-    let updatedAt: Date
+public struct CourseQuestion: Codable, Identifiable, QuestionType {
+    public let id: UUID
+    public let courseId: Int
+    public let lessonId: Int
+    public let questionText: String
+    public let questionType: QuestionResponseType
+    public let options: [QuestionOption]?
+    public let isRequired: Bool
+    public let order: Int
+    public let createdAt: Date
+    public let updatedAt: Date
     
-    enum CodingKeys: String, CodingKey {
-        case id = "resource_id"
-        case lessonId = "lesson_id"
-        case title
-        case type
-        case url
-        case order
-        case isActive = "is_active"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-enum ResourceType: String, Codable {
-    case pdf = "pdf"
-    case video = "video"
-    case audio = "audio"
-    case link = "link"
-    case document = "document"
-}
-
-struct UserLesson: Codable, Identifiable {
-    let id: Int
-    let userCourseId: Int
-    let lessonId: Int
-    let status: CourseStatus
-    let completionDate: Date?
-    let lastAccessed: Date?
-    let createdAt: Date
-    let updatedAt: Date
+    public var uuid: UUID { id }
     
-    enum CodingKeys: String, CodingKey {
-        case id = "user_lesson_id"
-        case userCourseId = "user_course_id"
-        case lessonId = "lesson_id"
-        case status
-        case completionDate = "completion_date"
-        case lastAccessed = "last_accessed"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-struct UserResponse: Codable, Identifiable {
-    let id: Int
-    let userLessonId: Int
-    let questionId: Int
-    let response: String
-    let createdAt: Date
-    let updatedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id = "response_id"
-        case userLessonId = "user_lesson_id"
-        case questionId = "question_id"
-        case response
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-struct CourseQuestion: Codable, Identifiable {
-    let id: UUID
-    let courseId: Int
-    let lessonId: Int
-    let questionText: String
-    let questionType: QuestionResponseType
-    let options: [QuestionOption]?
-    let isRequired: Bool
-    let order: Int
-    let createdAt: Date
-    let updatedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case id
         case courseId = "course_id"
         case lessonId = "lesson_id"
@@ -154,15 +73,15 @@ struct CourseQuestion: Codable, Identifiable {
     }
 }
 
-struct CourseResponse: Codable, Identifiable {
-    let id: Int
-    let questionId: Int
-    let userId: UUID
-    let response: String
-    let createdAt: Date
-    let updatedAt: Date
+public struct CourseResponse: Codable, Identifiable {
+    public let id: Int
+    public let questionId: Int
+    public let userId: UUID
+    public let response: String
+    public let createdAt: Date
+    public let updatedAt: Date
     
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case id = "response_id"
         case questionId = "question_id"
         case userId = "user_id"
@@ -172,15 +91,15 @@ struct CourseResponse: Codable, Identifiable {
     }
 }
 
-struct UserCourse: Codable, Identifiable {
-    let id: UUID
-    let userId: UUID
-    let courseId: UUID
-    let progress: CourseProgress
-    let startedAt: Date
-    let completedAt: Date?
+public struct UserCourse: Codable, Identifiable {
+    public let id: UUID
+    public let userId: UUID
+    public let courseId: UUID
+    public let progress: CourseProgress
+    public let startedAt: Date
+    public let completedAt: Date?
     
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
         case courseId = "course_id"

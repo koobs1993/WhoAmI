@@ -4,6 +4,9 @@ struct WeeklyColumn: Codable, Identifiable {
     let id: Int
     let title: String
     let content: String
+    let shortDescription: String
+    let subtitle: String?
+    let author: String?
     let featuredImageUrl: String?
     let publishDate: Date
     let sequenceNumber: Int
@@ -17,6 +20,9 @@ struct WeeklyColumn: Codable, Identifiable {
         case id = "column_id"
         case title
         case content
+        case shortDescription = "short_description"
+        case subtitle
+        case author
         case featuredImageUrl = "featured_image_url"
         case publishDate = "publish_date"
         case sequenceNumber = "sequence_number"
@@ -32,6 +38,9 @@ struct WeeklyColumn: Codable, Identifiable {
         id = try container.decode(Int.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
         content = try container.decode(String.self, forKey: .content)
+        shortDescription = try container.decode(String.self, forKey: .shortDescription)
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+        author = try container.decodeIfPresent(String.self, forKey: .author)
         featuredImageUrl = try container.decodeIfPresent(String.self, forKey: .featuredImageUrl)
         publishDate = try container.decode(Date.self, forKey: .publishDate)
         sequenceNumber = try container.decode(Int.self, forKey: .sequenceNumber)
@@ -43,17 +52,23 @@ struct WeeklyColumn: Codable, Identifiable {
     }
 }
 
-struct WeeklyQuestion: Codable, Identifiable {
+struct WeeklyQuestion: Codable, Identifiable, QuestionType {
     let id: Int
     let columnId: Int
     let question: String
-    let options: [String]?
+    let options: [QuestionOption]?
     let correctAnswer: String?
     let explanation: String?
     let order: Int
     let isActive: Bool
     let createdAt: Date
     let updatedAt: Date
+    
+    // QuestionType protocol conformance
+    var uuid: UUID { UUID() }
+    var questionText: String { question }
+    var questionType: QuestionResponseType { .multipleChoice }
+    var isRequired: Bool { true }
     
     enum CodingKeys: String, CodingKey {
         case id = "question_id"
@@ -73,7 +88,7 @@ struct UserWeeklyProgress: Codable, Identifiable {
     let id: Int
     let userId: UUID
     let columnId: Int
-    let isCompleted: Bool
+    var isCompleted: Bool
     let completedAt: Date?
     let score: Int?
     let isActive: Bool

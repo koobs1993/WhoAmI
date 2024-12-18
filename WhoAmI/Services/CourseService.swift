@@ -1,24 +1,7 @@
 import Foundation
 import Supabase
 
-enum CourseError: LocalizedError {
-    case fetchFailed
-    case notFound
-    case invalidData
-    
-    var errorDescription: String? {
-        switch self {
-        case .fetchFailed:
-            return "Failed to fetch course data"
-        case .notFound:
-            return "Course not found"
-        case .invalidData:
-            return "Invalid course data"
-        }
-    }
-}
-
-actor CourseService {
+class CourseService {
     private let supabase: SupabaseClient
     
     init(supabase: SupabaseClient) {
@@ -26,59 +9,47 @@ actor CourseService {
     }
     
     func fetchCourses() async throws -> [Course] {
-        let query = supabase.database
+        let response: [Course] = try await supabase.database
             .from("courses")
-            .select("*")
+            .select()
+            .order(column: "created_at")
+            .execute()
+            .value
         
-        let response = try await query.execute()
-        return try response.value
+        return response
     }
     
-    func fetchCourseDetails(_ courseId: Int) async throws -> Course {
-        let query = supabase.database
+    func fetchCourse(id: Int) async throws -> Course {
+        let response: Course = try await supabase.database
             .from("courses")
-            .select("*, lessons(*)")
-            .eq("id", value: courseId)
+            .select()
+            .eq(column: "id", value: id)
             .single()
+            .execute()
+            .value
         
-        let response = try await query.execute()
-        return try response.value
+        return response
     }
     
-    func startUserLesson(userCourseId: Int, lessonId: Int) async throws {
-        let query = supabase.database
+    func createUserLesson(values: [String: String]) async throws {
+        try await supabase.database
             .from("user_lessons")
-            .insert([
-                "user_course_id": userCourseId,
-                "lesson_id": lessonId,
-                "status": "in_progress"
-            ])
-        
-        _ = try await query.execute()
+            .insert(values: values)
+            .execute()
     }
     
-    func completeUserLesson(userCourseId: Int, lessonId: Int) async throws {
-        let query = supabase.database
+    func updateUserLesson(userLessonId: Int, values: [String: String]) async throws {
+        try await supabase.database
             .from("user_lessons")
-            .update([
-                "status": "completed",
-                "completion_date": Date()
-            ])
-            .eq("user_course_id", value: userCourseId)
-            .eq("lesson_id", value: lessonId)
-        
-        _ = try await query.execute()
+            .update(values: values)
+            .eq(column: "id", value: userLessonId)
+            .execute()
     }
     
-    func saveLessonResponse(userLessonId: Int, questionId: Int, response: String) async throws {
-        let query = supabase.database
+    func saveUserResponse(values: [String: String]) async throws {
+        try await supabase.database
             .from("user_responses")
-            .insert([
-                "user_lesson_id": userLessonId,
-                "question_id": questionId,
-                "response": response
-            ])
-        
-        _ = try await query.execute()
+            .insert(values: values)
+            .execute()
     }
 } 

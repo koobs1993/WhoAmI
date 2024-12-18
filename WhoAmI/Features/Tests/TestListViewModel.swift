@@ -13,22 +13,16 @@ class TestListViewModel: ObservableObject {
         self.supabase = supabase
     }
     
-    func fetchTests() async {
+    func fetchTests() async throws {
         isLoading = true
-        error = nil
+        defer { isLoading = false }
         
-        do {
-            let response = try await supabase.database
-                .from("tests")
-                .select()
-                .order("created_at", ascending: false)
-                .execute()
-            
-            tests = try response.decode([PsychTest].self)
-        } catch {
-            self.error = error
-        }
+        let response: PostgrestResponse<[PsychTest]> = try await supabase.database
+            .from("tests")
+            .select()
+            .order(column: "created_at", ascending: false)
+            .execute()
         
-        isLoading = false
+        tests = try response.value
     }
 } 

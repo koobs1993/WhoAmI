@@ -7,97 +7,75 @@ class ChatHistoryViewModel: ObservableObject {
     private var currentPage = 0
     private let pageSize = 20
     private let supabase: SupabaseClient
+    private let authManager: AuthManager
     
-    init(supabase: SupabaseClient) {
+    init(supabase: SupabaseClient, authManager: AuthManager) {
         self.supabase = supabase
+        self.authManager = authManager
     }
     
     @MainActor
-    func loadSessions() async {
-        guard !isLoading else { return }
-        isLoading = true
+    func fetchSessions() async throws {
+        let response: PostgrestResponse<[ChatSession]> = try await supabase.database
+            .from("chat_sessions")
+            .select()
+            .execute()
         
-        do {
-            let response: [ChatSession] = try await supabase.database
-                .from("chat_sessions")
-                .select()
-                .order("created_at", ascending: false)
-                .range(from: 0, to: pageSize)
-                .execute()
-                .value
-            
-            sessions = response
-            currentPage = 1
-        } catch {
-            print("Error loading chat sessions: \(error)")
-        }
-        
-        isLoading = false
+        sessions = try response.value
+        currentPage = 1
     }
     
     @MainActor
-    func loadMore() async {
-        guard !isLoading else { return }
-        isLoading = true
-        
-        do {
-            let start = currentPage * pageSize
-            let end = start + pageSize
-            
-            let response: [ChatSession] = try await supabase.database
-                .from("chat_sessions")
-                .select()
-                .order("created_at", ascending: false)
-                .range(from: start, to: end)
-                .execute()
-                .value
-            
-            sessions.append(contentsOf: response)
-            currentPage += 1
-        } catch {
-            print("Error loading more chat sessions: \(error)")
-        }
-        
-        isLoading = false
+    func clearSessions() async throws {
+        _ = try await supabase.database
+            .from("chat_sessions")
+            .delete()
+            .execute()
     }
     
-    func deleteSessions() async {
-        do {
-            try await supabase.database
-                .from("chat_sessions")
-                .delete()
-                .eq("user_id", value: userId)
-                .execute()
-            sessions = []
-        }
-    }
-    
-    func summarizeSession(session: ChatSession) async throws -> String {
-        let params: [String: Encodable] = ["session_id": session.id]
-        let response = try await supabase.database
+    func summarizeSession(sessionId: UUID) async throws -> String {
+        let params = SummarizeParams(sessionId: sessionId.uuidString)
+        let response: PostgrestResponse<String> = try await supabase.database
             .rpc(fn: "summarize_chat_session", params: params)
             .execute()
-            .data
         
-        guard let summary = response as? [String: Any],
-              let text = summary["summary"] as? String else {
-            throw ChatError.invalidResponse
-        }
-        return text
+        return try response.value
+    }
+}
+
+struct SummarizeParams: Encodable {
+    let sessionId: String
+    
+    private enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
     }
 }
 
 struct ChatHistoryView: View {
     @StateObject private var viewModel: ChatHistoryViewModel
+    @State private var error: Error?
+    @State private var showError = false
     
-    init(supabase: SupabaseClient) {
-        _viewModel = StateObject(wrappedValue: ChatHistoryViewModel(supabase: supabase))
+    init(supabase: SupabaseClient, authManager: AuthManager) {
+        _viewModel = StateObject(wrappedValue: ChatHistoryViewModel(supabase: supabase, authManager: authManager))
     }
     
     var body: some View {
         ChatSessionListView(sessions: viewModel.sessions) { session in
-            // Session row content
             ChatSessionRow(session: session)
+        }
+        .task {
+            do {
+                try await viewModel.fetchSessions()
+            } catch {
+                self.error = error
+                self.showError = true
+            }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(error?.localizedDescription ?? "An unknown error occurred")
         }
     }
 }

@@ -1,119 +1,137 @@
 import Foundation
 import Supabase
 
+struct NotificationSettings: Codable {
+    let enabled: Bool
+    let types: [NotificationType]
+}
+
 @MainActor
-class NotificationsViewModel: BaseService, ObservableObject {
+class NotificationsViewModel: ObservableObject {
+    private let supabase: SupabaseClient
+    private let cache = NSCache<NSString, CacheEntry<[UserNotification]>>()
+    private let cacheDuration: TimeInterval = 300 // 5 minutes
+    private let userId: UUID
+    
     @Published var notifications: [UserNotification] = []
     @Published var isLoading = false
-    @Published var deviceSettings = NotificationSettings()
+    @Published var error: Error?
+    @Published var deviceSettings = UserDeviceSettings(
+        notificationsEnabled: true,
+        theme: "system",
+        language: "en",
+        courseUpdatesEnabled: true,
+        testRemindersEnabled: true,
+        weeklySummariesEnabled: true,
+        analyticsEnabled: true,
+        trackingAuthorized: false,
+        darkModeEnabled: false,
+        hapticsEnabled: true,
+        fontSize: 16,
+        soundEnabled: true
+    )
     
-    private let cache = NSCache<NSString, BaseService.CacheEntry<[UserNotification]>>()
-    private let cacheDuration: TimeInterval = 300 // 5 minutes
+    var isEnabled: Bool {
+        deviceSettings.notificationsEnabled
+    }
     
-    override init(supabase: SupabaseClient = Config.supabaseClient) {
-        super.init(supabase: supabase)
-        Task {
-            await setupCache()
-            try? await loadSettings()
-        }
+    var enabledTypes: [NotificationType] {
+        var types: [NotificationType] = []
+        if deviceSettings.courseUpdatesEnabled { types.append(.courseUpdate) }
+        if deviceSettings.testRemindersEnabled { types.append(.testReminder) }
+        if deviceSettings.weeklySummariesEnabled { types.append(.info) }
+        return types
+    }
+    
+    init(supabase: SupabaseClient) {
+        self.supabase = supabase
+        self.userId = UUID() // This should be set from auth session
+        setupCache()
     }
     
     private func setupCache() {
-        super.setupCache(cache)
+        cache.countLimit = 100
+        cache.totalCostLimit = 50 * 1024 * 1024 // 50 MB
     }
     
-    func loadNotifications() async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
-        // Check cache first
-        if let notifications = getCachedValue(from: cache, forKey: "notifications", duration: cacheDuration) {
-            self.notifications = notifications
-            return
-        }
-        
-        // Fetch from network
-        let response = try await supabase.database
-            .from("notifications")
-            .select()
-            .eq(column: "user_id", value: try validateUser())
-            .order(column: "created_at", ascending: false)
-            .execute()
-        
-        guard let data = response.data else {
-            return
-        }
-        
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let jsonData = try JSONSerialization.data(withJSONObject: data)
-        notifications = try decoder.decode([UserNotification].self, from: jsonData)
-        
-        // Update cache
-        setCachedValue(notifications, in: cache, forKey: "notifications")
-    }
-    
-    func markAsRead(_ notification: UserNotification) async throws {
-        guard let index = notifications.firstIndex(where: { $0.id == notification.id }) else {
-            return
-        }
-        
-        try await supabase.database
-            .from("notifications")
-            .update(values: ["is_read": true])
-            .eq(column: "id", value: notification.id)
-            .execute()
-        
-        notifications[index].read = true
-    }
-    
-    func markAllAsRead() async throws {
-        try await supabase.database
-            .from("notifications")
-            .update(values: ["is_read": true])
-            .eq(column: "user_id", value: try validateUser())
-            .execute()
-        
-        for index in notifications.indices {
-            notifications[index].read = true
-        }
-    }
-    
-    func deleteNotification(_ notification: UserNotification) async throws {
-        try await supabase.database
-            .from("notifications")
-            .delete()
-            .eq(column: "id", value: notification.id)
-            .execute()
-        
-        notifications.removeAll { $0.id == notification.id }
-    }
-    
-    func loadSettings() async throws {
-        let response = try await supabase.database
-            .from("notification_settings")
-            .select()
-            .eq(column: "user_id", value: try validateUser())
-            .single()
-            .execute()
-        
-        if let data = response.data {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let jsonData = try JSONSerialization.data(withJSONObject: data)
-            deviceSettings = try decoder.decode(NotificationSettings.self, from: jsonData)
+    func saveSettings() async {
+        do {
+            try await updateSettings()
+        } catch {
+            self.error = error
         }
     }
     
     func updateSettings() async throws {
+        let settings = NotificationSettings(
+            enabled: isEnabled,
+            types: enabledTypes
+        )
+        
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(settings)
+        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        
         try await supabase.database
-            .from("notification_settings")
+            .from("user_settings")
             .upsert(values: [
-                "user_id": try validateUser(),
-                "notifications_enabled": deviceSettings.notificationsEnabled,
-                "course_updates_enabled": deviceSettings.courseUpdatesEnabled,
-                "test_reminders_enabled": deviceSettings.testRemindersEnabled,
-                "weekly_summaries_enabled": deviceSettings.weeklySummariesEnabled
+                "user_id": userId.uuidString,
+                "notification_settings": try JSONSerialization.data(withJSONObject: dict).base64EncodedString()
+            ])
+            .execute()
+    }
+    
+    func fetchNotifications() async throws {
+        let response = try await supabase.database
+            .from("notifications")
+            .select()
+            .eq(column: "user_id", value: userId)
+            .order(column: "created_at", ascending: false)
+            .execute()
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        notifications = try decoder.decode([UserNotification].self, from: data)
+        cache.setObject(CacheEntry(value: notifications), forKey: "notifications" as NSString)
+    }
+    
+    private func getCachedNotifications() -> [UserNotification]? {
+        guard let entry = cache.object(forKey: "notifications" as NSString) else { return nil }
+        if entry.isExpired {
+            return nil
+        }
+        return entry.value
+    }
+    
+    func markAsRead(_ notification: UserNotification) async throws {
+        try await supabase.database
+            .from("notifications")
+            .update(values: ["read": true])
+            .eq(column: "id", value: notification.id)
+            .execute()
+        
+        if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
+            var updatedNotification = notifications[index]
+            updatedNotification.read = true
+            notifications[index] = updatedNotification
+        }
+    }
+    
+    func saveNotificationSettings() async throws {
+        let settings = NotificationSettings(
+            enabled: deviceSettings.notificationsEnabled,
+            types: enabledTypes
+        )
+        let dict = try JSONEncoder().encode(settings)
+        let jsonString = String(data: dict, encoding: .utf8) ?? "{}"
+        
+        try await supabase.database
+            .from("user_settings")
+            .upsert(values: [
+                "user_id": userId.uuidString,
+                "notification_settings": jsonString
             ])
             .execute()
     }

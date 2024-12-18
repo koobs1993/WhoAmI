@@ -41,11 +41,15 @@ struct TestListView: View {
         }
         .sheet(isPresented: $showingTestDetails) {
             if let test = selectedTest {
-                TestDetailView(test: test, supabase: supabase)
+                TestDetailView(test: test)
             }
         }
         .task {
-            await viewModel.fetchTests()
+            do {
+                try await viewModel.fetchTests()
+            } catch {
+                print("Error fetching tests: \(error)")
+            }
         }
     }
 }
@@ -69,8 +73,8 @@ struct TestRowView: View {
                 
                 Spacer()
                 
-                if let status = test.status {
-                    StatusBadge(status: status)
+                if let progress = test.userProgress {
+                    StatusBadge(status: progress.status.rawValue)
                 }
             }
         }

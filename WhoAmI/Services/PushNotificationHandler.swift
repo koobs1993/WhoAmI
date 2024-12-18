@@ -4,13 +4,16 @@ import UserNotifications
 
 @MainActor
 class PushNotificationHandler: BaseService {
-    static let shared = PushNotificationHandler()
+    static let shared = PushNotificationHandler(supabase: Config.supabaseClient)
+    
     private let cache = NSCache<NSString, CacheEntry<[UserDevice]>>()
     private let cacheDuration: TimeInterval = 300 // 5 minutes
     
-    private override init() {
-        super.init()
-        setupCache(cache)
+    private override init(supabase: SupabaseClient) {
+        super.init(supabase: supabase)
+        Task { @MainActor in
+            setupCache(cache)
+        }
     }
     
     func registerForPushNotifications() {
@@ -43,43 +46,51 @@ class PushNotificationHandler: BaseService {
     // MARK: - Device Management
     
     func registerDevice(token: String) async throws {
-        try await upsert(into: "user_devices", values: [
-            "user_id": try validateUser(),
+        let userId = try await validateUser()
+        let values = [
+            "user_id": userId.uuidString,
             "device_token": token,
             "platform": "macos",
             "device_type": "macos",
-            "is_active": true,
-            "last_active": Date()
-        ])
+            "is_active": "true",
+            "last_active": ISO8601DateFormatter().string(from: Date())
+        ]
         
-        invalidateCache()
+        try await supabase.database
+            .from("user_devices")
+            .upsert(values: values)
+            .execute()
     }
     
     func fetchUserDevices() async throws -> [UserDevice] {
-        if let devices = getCachedValue(from: cache, forKey: "user_devices", duration: cacheDuration) {
+        if let devices = getCachedValue(from: cache, forKey: "user_devices") {
             return devices
         }
         
-        let devices: [UserDevice] = try await select(from: "user_devices")
-            .eq("user_id", value: try validateUser())
-            .eq("is_active", value: true)
+        let response = try await supabase.database
+            .from("user_devices")
+            .select()
             .execute()
-            .value
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        let devices = try decoder.decode([UserDevice].self, from: data)
         
         setCachedValue(devices, in: cache, forKey: "user_devices")
         return devices
     }
     
-    func deactivateDevice(deviceId: Int) async throws {
-        let updateData: [String: Any] = [
-            "is_active": false,
-            "updated_at": Date()
+    func updateDeviceStatus(deviceId: Int, isActive: Bool) async throws {
+        let updateData = [
+            "is_active": String(isActive),
+            "last_active": ISO8601DateFormatter().string(from: Date())
         ]
         
-        try await supabase
+        try await supabase.database
             .from("user_devices")
-            .update(updateData)
-            .eq("id", value: deviceId)
+            .update(values: updateData)
+            .eq(column: "id", value: deviceId)
             .execute()
     }
     

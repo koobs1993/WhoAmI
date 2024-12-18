@@ -1,13 +1,7 @@
 import Foundation
 
 // Enums to match database types
-// CourseStatus is now imported from SharedModels
-
-enum TestStatus: String, Codable {
-    case notStarted = "not_started"
-    case inProgress = "in_progress"
-    case completed = "completed"
-}
+// CourseStatus and TestStatus are now imported from SharedModels
 
 // Weekly Column Model for Dashboard
 struct DashboardWeeklyColumn: Identifiable, Codable {

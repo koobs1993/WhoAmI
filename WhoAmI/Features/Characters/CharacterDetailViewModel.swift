@@ -75,7 +75,7 @@ class CharacterDetailViewModel: ObservableObject {
                     updated_at
                 )
                 """)
-                .filter("problem_id", operator: .in_, value: problemIds)
+                .filter(column: "problem_id", operator: .in, value: problemIdsString)
                 .neq(column: "character_id", value: characterId)
                 .limit(count: 5)
             

@@ -14,7 +14,7 @@ struct LoginView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Welcome Back")
+            Text("Login")
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
@@ -22,50 +22,38 @@ struct LoginView: View {
                 TextField("Email", text: $email)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .textContentType(.emailAddress)
-                    .textInputAutocapitalization(.never)
+                    #if !os(macOS)
+                    .autocapitalization(.none)
+                    #endif
                 
                 SecureField("Password", text: $password)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .textContentType(.password)
                 
-                Button(action: {
-                    Task {
-                        do {
-                            try await viewModel.login(email: email, password: password)
-                        } catch {
-                            errorMessage = error.localizedDescription
-                            showingError = true
-                        }
-                    }
-                }) {
-                    Text("Sign In")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
                 }
                 
-                Button("Forgot Password?") {
+                Button(action: {
                     Task {
-                        do {
-                            try await viewModel.resetPassword(email: email)
-                        } catch {
-                            errorMessage = error.localizedDescription
-                            showingError = true
-                        }
+                        await viewModel.login(email: email, password: password)
+                    }
+                }) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                    } else {
+                        Text("Sign In")
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                .foregroundColor(.blue)
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isLoading)
             }
-            .padding(.horizontal)
+            .padding()
         }
         .padding()
-        .alert("Error", isPresented: $showingError) {
-            Button("OK") { }
-        } message: {
-            Text(errorMessage)
-        }
     }
 }
 

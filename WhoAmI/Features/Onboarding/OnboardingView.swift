@@ -32,8 +32,14 @@ struct OnboardingView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar(content: {
-                ToolbarItem(placement: .navigationBarLeading) {
+            .toolbar {
+                ToolbarItem(placement: {
+                    #if os(macOS)
+                    return .automatic
+                    #else
+                    return .navigationBarLeading
+                    #endif
+                }()) {
                     if viewModel.currentStep != .welcome {
                         Button("Back") {
                             viewModel.previousStep()
@@ -41,14 +47,21 @@ struct OnboardingView: View {
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: {
+                    #if os(macOS)
+                    return .automatic
+                    #else
+                    return .navigationBarTrailing
+                    #endif
+                }()) {
                     if viewModel.currentStep != .finish {
                         Button("Next") {
                             viewModel.nextStep()
                         }
+                        .disabled(!viewModel.canProceed)
                     }
                 }
-            })
+            }
         }
     }
 }
@@ -242,68 +255,6 @@ struct FinishStepView: View {
             .padding(.horizontal)
         }
         .padding()
-    }
-}
-
-// MARK: - Extensions
-extension AgeRange {
-    var displayText: String {
-        switch self {
-        case .age18to24: return "18-24"
-        case .age25to34: return "25-34"
-        case .age35to44: return "35-44"
-        case .age45to54: return "45-54"
-        case .age55to64: return "55-64"
-        case .age65Plus: return "65+"
-        }
-    }
-}
-
-extension ResearchSituation {
-    var displayText: String {
-        switch self {
-        case .veryPositive: return "Very Positive"
-        case .ratherPositive: return "Rather Positive"
-        case .neutral: return "Neutral"
-        case .ratherNegative: return "Rather Negative"
-        case .veryNegative: return "Very Negative"
-        }
-    }
-}
-
-extension Expectation {
-    var displayText: String {
-        switch self {
-        case .personalGrowth: return "Personal Growth"
-        case .professionalDevelopment: return "Professional Development"
-        case .financialWellbeing: return "Financial Wellbeing"
-        case .socialRecognition: return "Social Recognition"
-        case .selfRealization: return "Self Realization"
-        }
-    }
-}
-
-extension PrimaryMotivator {
-    var displayText: String {
-        switch self {
-        case .financialReward: return "Financial Reward"
-        case .professionalInterest: return "Professional Interest"
-        case .creativeFullfillment: return "Creative Fulfillment"
-        case .socialRecognition: return "Social Recognition"
-        case .internalNeed: return "Internal Need"
-        }
-    }
-}
-
-extension ActivityFrequency {
-    var displayText: String {
-        switch self {
-        case .everyDay: return "Every Day"
-        case .severalTimesWeek: return "Several Times a Week"
-        case .onceWeek: return "Once a Week"
-        case .severalTimesMonth: return "Several Times a Month"
-        case .veryRarely: return "Very Rarely"
-        }
     }
 }
 

@@ -1,11 +1,20 @@
 import Foundation
 import Supabase
 
-struct OnboardingService {
-    private let supabase: SupabaseClient
+class OnboardingService: BaseService {
+    func createProfile(_ profile: UserProfile) async throws {
+        try await supabase.database
+            .from("user_profiles")
+            .insert(values: profile)
+            .execute()
+    }
     
-    init(supabase: SupabaseClient) {
-        self.supabase = supabase
+    func updateProfile(_ profile: UserProfile) async throws {
+        try await supabase.database
+            .from("user_profiles")
+            .update(values: profile)
+            .eq(column: "user_id", value: profile.userId.uuidString)
+            .execute()
     }
     
     func fetchQuestions() async throws -> [OnboardingQuestion] {
@@ -16,7 +25,7 @@ struct OnboardingService {
             
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data ?? [])
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
         return try decoder.decode([OnboardingQuestion].self, from: data)
     }
     

@@ -33,11 +33,22 @@ enum AuthModels {
         }
     }
     
-    struct SignUpData {
+    struct SignUpData: Codable {
         let email: String
         let password: String
         let firstName: String
         let lastName: String
+        let gender: Gender
+        let role: UserRole
+        
+        enum CodingKeys: String, CodingKey {
+            case email
+            case password
+            case firstName = "first_name"
+            case lastName = "last_name"
+            case gender
+            case role
+        }
     }
     
     struct SignInData {

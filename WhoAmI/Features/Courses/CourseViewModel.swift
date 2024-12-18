@@ -5,78 +5,91 @@ import Supabase
 class CourseViewModel: ObservableObject {
     @Published var courses: [Course] = []
     @Published var currentCourse: Course?
-    @Published var error: Error?
     @Published var isLoading = false
+    @Published var error: Error?
     
-    private let courseService: CourseService
-    private let userId: UUID
+    private let supabase: SupabaseClient
     
-    init(supabase: SupabaseClient, userId: UUID) {
-        self.courseService = CourseService(supabase: supabase)
-        self.userId = userId
+    init(supabase: SupabaseClient) {
+        self.supabase = supabase
     }
     
-    func fetchCourses() async {
-        isLoading = true
-        defer { isLoading = false }
+    func loadCourses() async throws {
+        let response: PostgrestResponse<[Course]> = try await supabase.database
+            .from("courses")
+            .select()
+            .order(column: "created_at")
+            .execute()
         
-        do {
-            self.courses = try await courseService.fetchCourses()
-        } catch {
-            self.error = error
-        }
+        courses = try response.value
     }
     
-    func fetchCourseDetails(_ courseId: Int) async {
-        isLoading = true
-        defer { isLoading = false }
+    func fetchCourses() async throws {
+        let response = try await supabase.database
+            .from("courses")
+            .select()
+            .execute()
         
-        do {
-            self.currentCourse = try await courseService.fetchCourseDetails(courseId)
-        } catch {
-            self.error = error
-        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        courses = try decoder.decode([Course].self, from: data)
     }
     
-    func startUserLesson(userCourseId: UUID, lessonId: UUID) async {
-        do {
-            let userCourseIdInt = Int(userCourseId.uuidString) ?? 0
-            let lessonIdInt = Int(lessonId.uuidString) ?? 0
-            try await courseService.startUserLesson(userCourseId: userCourseIdInt, lessonId: lessonIdInt)
-            if let courseId = currentCourse?.id {
-                await fetchCourseDetails(Int(courseId.uuidString) ?? 0)
-            }
-        } catch {
-            self.error = error
-        }
+    func fetchUserCourses() async throws {
+        let response = try await supabase.database
+            .from("user_courses")
+            .select(columns: """
+                *,
+                course:courses (
+                    id,
+                    title,
+                    description,
+                    image_url,
+                    duration,
+                    lessons,
+                    created_at,
+                    updated_at
+                )
+            """)
+            .execute()
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        let userCourses = try decoder.decode([UserCourseData].self, from: data)
+        courses = userCourses.map { $0.course }
     }
     
-    func completeUserLesson(userCourseId: UUID, lessonId: UUID) async {
-        do {
-            let userCourseIdInt = Int(userCourseId.uuidString) ?? 0
-            let lessonIdInt = Int(lessonId.uuidString) ?? 0
-            try await courseService.completeUserLesson(userCourseId: userCourseIdInt, lessonId: lessonIdInt)
-            if let courseId = currentCourse?.id {
-                await fetchCourseDetails(Int(courseId.uuidString) ?? 0)
-            }
-        } catch {
-            self.error = error
-        }
-    }
-    
-    func saveLessonResponse(userLessonId: UUID, questionId: UUID, response: String) async {
-        do {
-            let userLessonIdInt = Int(userLessonId.uuidString) ?? 0
-            let questionIdInt = Int(questionId.uuidString) ?? 0
-            try await courseService.saveLessonResponse(userLessonId: userLessonIdInt, questionId: questionIdInt, response: response)
-        } catch {
-            self.error = error
-        }
+    func fetchCourse(id: UUID) async throws -> Course {
+        let response = try await supabase.database
+            .from("courses")
+            .select()
+            .eq(column: "id", value: id.uuidString)
+            .single()
+            .execute()
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = try JSONSerialization.data(withJSONObject: response.underlyingResponse.data)
+        return try decoder.decode(Course.self, from: data)
     }
     
     func calculateProgress(for course: Course) -> Double {
-        guard let lessons = course.lessons else { return 0.0 }
-        let completedCount = lessons.filter { $0.status == LessonStatus.completed }.count
+        guard let lessons = course.lessons, !lessons.isEmpty else { return 0.0 }
+        let completedCount = lessons.filter { $0.status == .completed }.count
         return Double(completedCount) / Double(lessons.count)
     }
+}
+
+struct UserCourseData: Codable {
+    let id: UUID
+    let userId: UUID
+    let courseId: UUID
+    let course: Course
+    let progress: Double?
+    let lastAccessedAt: Date?
+    let createdAt: Date
+    let updatedAt: Date
 } 

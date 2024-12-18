@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Use the shared QuestionView from SharedQuestionView.swift
+// Use the shared QuestionView and QuestionType from SharedQuestionView.swift
 typealias QuestionView = SharedQuestionView
-
-// Remove duplicate question type views and use the ones from SharedQuestionView.swift 
+typealias TestQuestionType = QuestionType

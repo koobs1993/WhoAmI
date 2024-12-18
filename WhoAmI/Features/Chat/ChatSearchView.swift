@@ -1,6 +1,12 @@
 import SwiftUI
 import Supabase
 
+extension ChatSession: Equatable {
+    public static func == (lhs: ChatSession, rhs: ChatSession) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 class ChatSearchViewModel: ObservableObject {
     @Published private(set) var sessions: [ChatSession] = []
     @Published var isLoading = false
@@ -14,58 +20,48 @@ class ChatSearchViewModel: ObservableObject {
     }
     
     @MainActor
-    func searchSessions() async {
+    func searchSessions() async throws {
         isLoading = true
-        do {
-            let response = try await supabase.database
-                .from("chat_sessions")
-                .select()
-                .textSearch("title", query: searchText)
-                .execute()
-            
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            if let data = response.data {
-                sessions = try decoder.decode([ChatSession].self, from: data)
-            }
-        } catch {
-            print("Error searching chat sessions: \(error)")
-        }
-        isLoading = false
+        defer { isLoading = false }
+        
+        let response: PostgrestResponse<[ChatSession]> = try await supabase.database
+            .from("chat_sessions")
+            .select()
+            .textSearch(column: "title", query: searchText)
+            .execute()
+        
+        sessions = try response.value
     }
     
     @MainActor
-    func loadMore() async {
+    func loadMore() async throws {
         guard !isLoading else { return }
         isLoading = true
+        defer { isLoading = false }
         
-        do {
-            let nextPage = currentPage + 1
-            let start = nextPage * pageSize
-            let end = start + pageSize
-            
-            let response: [ChatSession] = try await supabase.database
-                .from("chat_sessions")
-                .select()
-                .ilike(column: "title", pattern: "%\(searchText)%")
-                .order("created_at", ascending: false)
-                .range(from: start, to: end)
-                .execute()
-                .value
-            
-            sessions.append(contentsOf: response)
-            currentPage = nextPage
-        } catch {
-            print("Error loading more chat sessions: \(error)")
-        }
+        let nextPage = currentPage + 1
+        let start = nextPage * pageSize
+        let end = start + pageSize
         
-        isLoading = false
+        let response: PostgrestResponse<[ChatSession]> = try await supabase.database
+            .from("chat_sessions")
+            .select()
+            .ilike(column: "title", value: "%\(searchText)%")
+            .order(column: "created_at", ascending: false)
+            .range(from: start, to: end)
+            .execute()
+        
+        let newSessions = try response.value
+        sessions.append(contentsOf: newSessions)
+        currentPage = nextPage
     }
 }
 
 struct ChatSearchView: View {
     @StateObject private var viewModel: ChatSearchViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var error: Error?
+    @State private var showError = false
     
     init(supabase: SupabaseClient) {
         _viewModel = StateObject(wrappedValue: ChatSearchViewModel(supabase: supabase))
@@ -78,26 +74,44 @@ struct ChatSearchView: View {
                     .onAppear {
                         if session.id == viewModel.sessions.last?.id {
                             Task {
-                                await viewModel.loadMore()
+                                try? await viewModel.loadMore()
                             }
                         }
                     }
             }
         }
         .searchable(text: $viewModel.searchText)
-        .onChange(of: viewModel.searchText) { _ in
+        .onChange(of: viewModel.searchText) { _, newValue in
             Task {
-                await viewModel.searchSessions()
+                do {
+                    try await viewModel.searchSessions()
+                } catch {
+                    self.error = error
+                    self.showError = true
+                }
             }
         }
         .navigationTitle("Search Chats")
+        #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: {
+                #if os(macOS)
+                return .automatic
+                #else
+                return .navigationBarTrailing
+                #endif
+            }()) {
                 Button("Done") {
                     dismiss()
                 }
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(error?.localizedDescription ?? "An unknown error occurred")
         }
     }
 }
@@ -115,11 +129,5 @@ struct ChatSessionCard: View {
                 .foregroundColor(.secondary)
         }
         .padding(.vertical, 8)
-    }
-}
-
-extension ChatSession: Equatable {
-    public static func == (lhs: ChatSession, rhs: ChatSession) -> Bool {
-        lhs.id == rhs.id
     }
 } 

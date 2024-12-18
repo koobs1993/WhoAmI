@@ -1,14 +1,14 @@
 import SwiftUI
 
 protocol QuestionType {
-    var id: UUID { get }
+    var uuid: UUID { get }
     var questionText: String { get }
     var questionType: QuestionResponseType { get }
     var options: [QuestionOption]? { get }
     var isRequired: Bool { get }
 }
 
-struct QuestionView<T: QuestionType>: View {
+struct SharedQuestionView<T: QuestionType>: View {
     let question: T
     @Binding var response: String
     
@@ -28,10 +28,10 @@ struct QuestionView<T: QuestionType>: View {
                 if let options = question.options {
                     ForEach(options) { option in
                         Button(action: {
-                            response = option.text
+                            response = option.value
                         }) {
                             HStack {
-                                Image(systemName: response == option.text ? "checkmark.circle.fill" : "circle")
+                                Image(systemName: response == option.value ? "checkmark.circle.fill" : "circle")
                                 Text(option.text)
                             }
                         }
@@ -71,4 +71,23 @@ struct QuestionView<T: QuestionType>: View {
     }
 }
 
-// Preview provider can be added here if needed 
+// Preview provider
+struct SharedQuestionView_Previews: PreviewProvider {
+    struct PreviewQuestion: QuestionType {
+        let uuid = UUID()
+        let questionText = "Sample Question"
+        let questionType = QuestionResponseType.multipleChoice
+        let options: [QuestionOption]? = [
+            QuestionOption(id: 1, questionId: 1, text: "Option 1", value: "1", order: 1),
+            QuestionOption(id: 2, questionId: 1, text: "Option 2", value: "2", order: 2)
+        ]
+        let isRequired = true
+    }
+    
+    static var previews: some View {
+        SharedQuestionView(
+            question: PreviewQuestion(),
+            response: .constant("")
+        )
+    }
+} 

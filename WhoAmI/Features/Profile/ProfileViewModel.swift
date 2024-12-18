@@ -1,120 +1,122 @@
 import Foundation
 import Supabase
 import StoreKit
-import SwiftUI
 
 @MainActor
-class ProfileViewModel: ObservableObject {
+class ProfileViewModel: ObservableObject, @unchecked Sendable {
     private let supabase: SupabaseClient
+    private var userId: UUID?
+    
     @Published var profile: UserProfile?
     @Published var isLoading = false
     @Published var error: Error?
-    @Published var deviceSettings: UserDevicePreferences?
+    @Published var deviceSettings: UserDeviceSettings?
     @Published var privacySettings: UserPrivacySettings?
     @Published var stats: UserStats?
+    @Published var isEditing = false
+    @Published var profileImage: NSImage?
+    @Published var profileImageUrl: String?
     
-    init(supabase: SupabaseClient) {
+    // Form fields
+    @Published var firstName: String = ""
+    @Published var lastName: String = ""
+    @Published var email: String = ""
+    
+    init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
-    }
-    
-    func loadProfile() async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
-        do {
-            let response: PostgrestResponse<[String: Any]> = try await supabase.database
-                .from("users")
-                .select(columns: """
-                    *,
-                    privacy_settings (*),
-                    userdevicesettings (*)
-                """)
-                .eq(column: "id", value: try await supabase.auth.session.user.id.uuidString)
-                .single()
-                .execute()
-            
-            if let data = response.data {
-                let jsonData = try JSONSerialization.data(withJSONObject: data)
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                profile = try decoder.decode(UserProfile.self, from: jsonData)
-            }
-            
-            try await loadDeviceSettings()
-            try await loadPrivacySettings()
-            try await loadStats()
-        } catch {
-            self.error = error
-            throw error
+        self.userId = userId
+        Task {
+            await fetchCurrentUser()
         }
     }
     
-    func updateProfile(firstName: String, lastName: String, bio: String) async throws {
+    func fetchCurrentUser() async {
         isLoading = true
-        defer { isLoading = false }
+        do {
+            let user = try await supabase.auth.session.user
+            self.userId = user.id
+            await fetchProfile()
+            await fetchPrivacySettings()
+            await fetchStats()
+        } catch {
+            self.error = error
+        }
+        isLoading = false
+    }
+    
+    func fetchProfile() async {
+        guard let userId = userId else { return }
+        do {
+            let query = supabase.database
+                .from("user_profiles")
+                .select()
+                .eq(column: "user_id", value: userId.uuidString)
+                .single()
+            
+            self.profile = try await query.execute().value
+        } catch {
+            self.error = error
+        }
+    }
+    
+    func fetchPrivacySettings() async {
+        guard let userId = userId else { return }
+        do {
+            let query = supabase.database
+                .from("user_privacy_settings")
+                .select()
+                .eq(column: "user_id", value: userId.uuidString)
+                .single()
+            
+            self.privacySettings = try await query.execute().value
+        } catch {
+            self.error = error
+        }
+    }
+    
+    func fetchStats() async {
+        guard let userId = userId else { return }
+        do {
+            let query = supabase.database
+                .from("user_stats")
+                .select()
+                .eq(column: "user_id", value: userId.uuidString)
+                .single()
+            
+            self.stats = try await query.execute().value
+        } catch {
+            self.error = error
+        }
+    }
+    
+    func updateProfile(_ updatedProfile: UserProfile) async throws {
+        guard let userId = userId else { throw ProfileError.userNotFound }
         
-        let userId = try await supabase.auth.session.user.id.uuidString
         try await supabase.database
-            .from("users")
-            .update(values: [
-                "first_name": firstName,
-                "last_name": lastName,
-                "bio": bio
-            ] as [String: Any])
-            .eq(column: "id", value: userId)
+            .from("user_profiles")
+            .update(values: updatedProfile)
+            .eq(column: "user_id", value: userId.uuidString)
             .execute()
         
-        try await loadProfile()
+        self.profile = updatedProfile
     }
     
-    func deleteAccount() async throws {
-        isLoading = true
-        defer { isLoading = false }
+    func updatePrivacySettings(_ settings: UserPrivacySettings) async throws {
+        guard let userId = userId else { throw ProfileError.userNotFound }
         
-        let userId = try await supabase.auth.session.user.id.uuidString
-        
-        // Update user data to anonymized version
         try await supabase.database
-            .from("users")
-            .update(values: [
-                "email": "deleted_\(UUID().uuidString)",
-                "first_name": "Deleted",
-                "last_name": "User",
-                "profile_image": nil,
-                "bio": nil
-            ] as [String: Any])
-            .eq(column: "id", value: userId)
+            .from("user_privacy_settings")
+            .update(values: settings)
+            .eq(column: "user_id", value: userId.uuidString)
             .execute()
         
-        try await supabase.auth.signOut()
-    }
-    
-    func sendVerificationEmail() async throws {
-        guard let email = profile?.email else { return }
-        try await supabase.auth.resetPasswordForEmail(email)
-    }
-    
-    func updatePassword(to newPassword: String) async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
-        try await supabase.auth.update(user: .init(password: newPassword))
-    }
-    
-    func updateEmail(to newEmail: String) async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
-        try await supabase.auth.update(user: .init(email: newEmail))
-        try await loadProfile()
+        self.privacySettings = settings
     }
     
     func uploadProfileImage(_ imageData: Data) async throws {
-        isLoading = true
-        defer { isLoading = false }
+        if userId == nil { throw ProfileError.userNotFound }
         
         let path = "\(UUID().uuidString).jpg"
-        
         let file = File(
             name: path,
             data: imageData,
@@ -122,189 +124,209 @@ class ProfileViewModel: ObservableObject {
             contentType: "image/jpeg"
         )
         
-        // Get storage bucket
-        let bucket = try await supabase.storage.from(id: "avatars")
+        let bucket = supabase.storage.from(id: "avatars")
         
         // Upload file
-        try await bucket.upload(
+        _ = try await bucket.upload(
             path: path,
             file: file,
             fileOptions: FileOptions(cacheControl: "3600")
         )
         
         // Get public URL
-        let publicURL = try await bucket.getPublicURL(path: path)
+        let publicURL = try bucket.getPublicURL(path: path)
         
-        let userId = try await supabase.auth.session.user.id.uuidString
-        try await supabase.database
-            .from("users")
-            .update(values: [
-                "profile_image": publicURL.absoluteString
-            ] as [String: Any])
-            .eq(column: "id", value: userId)
-            .execute()
-        
-        try await loadProfile()
-    }
-    
-    func updateDeviceSettings(_ settings: UserDevicePreferences) async throws {
-        let userId = try await supabase.auth.session.user.id.uuidString
-        try await supabase.database
-            .from("userdevicesettings")
-            .upsert(values: [
-                "user_id": userId,
-                "notifications_enabled": settings.notificationsEnabled,
-                "theme": settings.theme,
-                "language": settings.language,
-                "course_updates_enabled": settings.courseUpdatesEnabled,
-                "test_reminders_enabled": settings.testRemindersEnabled,
-                "weekly_summaries_enabled": settings.weeklySummariesEnabled,
-                "analytics_enabled": settings.analyticsEnabled,
-                "tracking_authorized": settings.trackingAuthorized,
-                "dark_mode_enabled": settings.darkModeEnabled,
-                "haptics_enabled": settings.hapticsEnabled
-            ] as [String: Any])
-            .execute()
-        
-        try await loadDeviceSettings()
-    }
-    
-    func updatePrivacySettings(showProfile: Bool, allowMessages: Bool) async throws {
-        let userId = try await supabase.auth.session.user.id.uuidString
-        try await supabase.database
-            .from("privacy_settings")
-            .upsert(values: [
-                "user_id": userId,
-                "show_profile": showProfile,
-                "allow_messages": allowMessages
-            ] as [String: Any])
-            .execute()
-        
-        try await loadPrivacySettings()
-    }
-    
-    private func loadDeviceSettings() async throws {
-        let userId = try await supabase.auth.session.user.id.uuidString
-        let response: PostgrestResponse<[String: Any]> = try await supabase.database
-            .from("userdevicesettings")
-            .select()
-            .eq(column: "user_id", value: userId)
-            .single()
-            .execute()
-        
-        if let data = response.data {
-            let jsonData = try JSONSerialization.data(withJSONObject: data)
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            deviceSettings = try decoder.decode(UserDevicePreferences.self, from: jsonData)
+        // Update profile with new avatar URL
+        if let profile = profile {
+            let updatedProfile = UserProfile(
+                id: profile.id,
+                userId: profile.userId,
+                firstName: profile.firstName,
+                lastName: profile.lastName,
+                email: profile.email,
+                gender: profile.gender,
+                role: profile.role,
+                avatarUrl: publicURL.absoluteString,
+                bio: profile.bio,
+                phone: profile.phone,
+                isActive: profile.isActive,
+                emailConfirmedAt: profile.emailConfirmedAt,
+                createdAt: profile.createdAt,
+                updatedAt: Date()
+            )
+            try await updateProfile(updatedProfile)
         }
     }
     
-    private func loadPrivacySettings() async throws {
-        let userId = try await supabase.auth.session.user.id.uuidString
-        let response: PostgrestResponse<[String: Any]> = try await supabase.database
-            .from("privacy_settings")
-            .select()
-            .eq(column: "user_id", value: userId)
-            .single()
-            .execute()
-        
-        if let data = response.data {
-            let jsonData = try JSONSerialization.data(withJSONObject: data)
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            privacySettings = try decoder.decode(UserPrivacySettings.self, from: jsonData)
-        }
-    }
+    // MARK: - StoreKit Methods
     
-    private func loadStats() async throws {
-        let userId = try await supabase.auth.session.user.id.uuidString
-        
-        // Fetch user courses
-        let coursesResponse: PostgrestResponse<[[String: Any]]> = try await supabase.database
-            .from("usercourses")
-            .select()
-            .eq(column: "user_id", value: userId)
-            .execute()
-        
-        let coursesCount = coursesResponse.data?.count ?? 0
-        
-        // Fetch user tests
-        let testsResponse: PostgrestResponse<[[String: Any]]> = try await supabase.database
-            .from("usertests")
-            .select()
-            .eq(column: "user_id", value: userId)
-            .execute()
-        
-        let testsCount = testsResponse.data?.count ?? 0
-        
-        // Fetch chat sessions
-        let chatsResponse: PostgrestResponse<[[String: Any]]> = try await supabase.database
-            .from("chatsessions")
-            .select()
-            .eq(column: "user_id", value: userId)
-            .execute()
-        
-        let chatsCount = chatsResponse.data?.count ?? 0
-        
-        stats = UserStats(
-            userId: UUID(uuidString: userId),
-            coursesCompleted: coursesCount,
-            testsCompleted: testsCount,
-            chatSessionsCount: chatsCount,
-            weeklyColumnsRead: 0,
-            totalTimeSpent: 0,
-            lastActive: Date()
-        )
-    }
-    
-    func purchase(_ product: StoreKit.Product) async throws -> StoreKit.Transaction? {
-        let result = try await product.purchase(options: [])
+    func handlePurchase(for duration: SubscriptionDuration) async throws -> StoreKit.Product {
+        let product = try await fetchProduct(for: duration)
+        let result = try await product.purchase()
         
         switch result {
         case .success(let verification):
             let transaction = try checkVerified(verification)
+            await updateSubscription(transaction: transaction, product: product)
+            await transaction.finish()
+            return product
             
-            // Update subscription in database
-            if let transaction = transaction {
-                let userId = try await supabase.auth.session.user.id.uuidString
-                let dateFormatter = ISO8601DateFormatter()
-                try await supabase.database
-                    .from("subscriptions")
-                    .upsert(values: [
-                        "user_id": userId,
-                        "product_id": product.id,
-                        "transaction_id": String(transaction.id),
-                        "purchase_date": dateFormatter.string(from: transaction.purchaseDate),
-                        "expires_date": transaction.expirationDate.map { dateFormatter.string(from: $0) },
-                        "status": "active"
-                    ] as [String: Any])
-                    .execute()
-            }
-            
-            return transaction
-            
-        case .userCancelled, .pending:
-            return nil
+        case .userCancelled:
+            throw StoreError.userCancelled
+        case .pending:
+            throw StoreError.verificationFailed
         @unknown default:
-            return nil
+            throw StoreError.verificationFailed
         }
     }
     
-    func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .unverified:
-            throw StoreError.verification
-        case .verified(let verified):
-            return verified
-        }
-    }
-    
-    func getProduct(for duration: SubscriptionDuration) async throws -> StoreKit.Product {
+    private func fetchProduct(for duration: SubscriptionDuration) async throws -> StoreKit.Product {
         let products = try await StoreKit.Product.products(for: [duration.productId])
         guard let product = products.first else {
-            throw StoreError.verification
+            throw StoreError.productNotFound
         }
         return product
+    }
+    
+    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .unverified:
+            throw StoreError.verificationFailed
+        case .verified(let safe):
+            return safe
+        }
+    }
+    
+    private func updateSubscription(transaction: StoreKit.Transaction, product: StoreKit.Product) async {
+        guard let userId = userId else { return }
+        
+        let record = SubscriptionRecord(
+            userId: userId,
+            productId: product.id,
+            originalTransactionId: UInt64(transaction.originalID),
+            webOrderLineItemId: UInt64(transaction.webOrderLineItemID ?? "0"),
+            purchaseDate: transaction.purchaseDate,
+            expirationDate: transaction.expirationDate,
+            status: "active"
+        )
+        
+        do {
+            try await supabase.database
+                .from("subscriptions")
+                .upsert(values: record)
+                .execute()
+        } catch {
+            print("Failed to update subscription in database:", error)
+        }
+    }
+    
+    @MainActor
+    func saveProfile() async throws {
+        guard let userId = userId else { throw ProfileError.userNotFound }
+        
+        struct ProfileUpdate: Codable {
+            let profileImageUrl: String?
+            let updatedAt: String
+            
+            enum CodingKeys: String, CodingKey {
+                case profileImageUrl = "profile_image_url"
+                case updatedAt = "updated_at"
+            }
+        }
+        
+        let update = ProfileUpdate(
+            profileImageUrl: profileImageUrl,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        try await supabase.database
+            .from("user_profiles")
+            .update(values: update)
+            .eq(column: "user_id", value: userId.uuidString)
+            .execute()
+    }
+    
+    @MainActor
+    func signOut() async {
+        do {
+            try await supabase.auth.signOut()
+            self.profile = nil
+            self.deviceSettings = nil
+            self.privacySettings = nil
+            self.stats = nil
+        } catch {
+            self.error = error
+        }
+    }
+}
+
+// MARK: - Supporting Types
+
+enum ProfileError: LocalizedError, Sendable {
+    case userNotFound
+    case invalidImageData
+    case uploadFailed
+    case updateFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .userNotFound:
+            return "User not found"
+        case .invalidImageData:
+            return "Invalid image data"
+        case .uploadFailed:
+            return "Failed to upload image"
+        case .updateFailed:
+            return "Failed to update profile"
+        }
+    }
+}
+
+struct SubscriptionRecord: Codable, Sendable {
+    let userId: UUID
+    let productId: String
+    let originalTransactionId: UInt64?
+    let webOrderLineItemId: UInt64?
+    let purchaseDate: Date
+    let expirationDate: Date?
+    let status: String
+    
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case productId = "product_id"
+        case originalTransactionId = "original_transaction_id"
+        case webOrderLineItemId = "web_order_line_item_id"
+        case purchaseDate = "purchase_date"
+        case expirationDate = "expiration_date"
+        case status
+    }
+}
+
+enum ProfileStoreError: LocalizedError, Sendable {
+    case verificationFailed
+    case purchaseFailed
+    case userCancelled
+    case networkError
+    case unknown
+    case productNotFound
+    case verification
+    
+    var errorDescription: String? {
+        switch self {
+        case .verificationFailed:
+            return "Transaction verification failed"
+        case .purchaseFailed:
+            return "Purchase failed"
+        case .userCancelled:
+            return "Purchase was cancelled"
+        case .networkError:
+            return "Network error occurred"
+        case .unknown:
+            return "An unknown error occurred"
+        case .productNotFound:
+            return "Product not found"
+        case .verification:
+            return "Transaction verification pending"
+        }
     }
 } 

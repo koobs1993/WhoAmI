@@ -2,26 +2,35 @@ import SwiftUI
 import Supabase
 
 struct ChatView: View {
-    @StateObject private var viewModel: ChatViewModel
+    @StateObject var viewModel: ChatViewModel
     let channelId: UUID
+    @State private var message = ""
     
-    init(supabase: SupabaseClient, channelId: UUID) {
-        _viewModel = StateObject(wrappedValue: ChatViewModel(supabase: supabase))
+    init(supabase: SupabaseClient, channelId: UUID, userId: UUID) {
+        _viewModel = StateObject(wrappedValue: ChatViewModel(supabase: supabase, userId: userId))
         self.channelId = channelId
     }
     
     var body: some View {
-        ChatContentView(viewModel: viewModel, channelId: channelId)
-            .navigationTitle("Chat")
-            .task {
-                if let session = try? await viewModel.supabase.auth.session {
-                    viewModel.userId = session.user.id
-                    try? await viewModel.loadMessages(for: channelId)
+        ScrollViewReader { proxy in
+            ScrollView {
+                MessageScrollView(viewModel: viewModel)
+                    .onChange(of: viewModel.typingUsers.isEmpty) { isEmpty in
+                        if !isEmpty {
+                            withAnimation {
+                                proxy.scrollTo("typing", anchor: .bottom)
+                            }
+                        }
+                    }
+                
+                if !viewModel.typingUsers.isEmpty {
+                    TypingIndicatorView(typingUsers: viewModel.typingUsers)
+                        .id("typingIndicator")
                 }
             }
-            .onDisappear {
-                viewModel.cleanup()
-            }
+        }
+        
+        MessageInputView(viewModel: viewModel, channelId: channelId)
     }
 }
 
@@ -108,20 +117,20 @@ private struct MessageInputView: View {
             text: $messageText,
             onSend: {
                 Task {
-                    try? await viewModel.sendMessage(messageText, in: channelId)
+                    try? await viewModel.sendMessage(messageText, sessionId: channelId)
                     messageText = ""
                 }
             },
             onTyping: { isTyping in
                 Task {
-                    try? await viewModel.updateTypingStatus(isTyping: isTyping, in: channelId)
+                    try? await viewModel.updateTypingStatus(isTyping: isTyping, sessionId: channelId)
                 }
             }
         )
     }
 }
 
-private struct MessageInput: View {
+private struct ChatMessageInput: View {
     @Binding var text: String
     let onSend: () -> Void
     let onTyping: (Bool) -> Void
@@ -130,7 +139,7 @@ private struct MessageInput: View {
         HStack {
             TextField("Type a message...", text: $text)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .onChange(of: text) { newValue in
+                .onChange(of: text) { _, newValue in
                     onTyping(!newValue.isEmpty)
                 }
             

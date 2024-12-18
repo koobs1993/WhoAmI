@@ -19,57 +19,67 @@ class DashboardService: BaseService, ObservableObject {
     }
     
     func fetchDashboardItems() async throws -> [DashboardItem] {
-        if let items = getCachedValue(from: cache, forKey: "dashboard_items", duration: cacheDuration) {
-            return items
+        guard let userId = try? await validateUser() else {
+            throw ServiceError.unauthorized
         }
         
-        let response = try await select(from: "dashboard_items")
-            .eq("user_id", value: userId)
-            .order("created_at", ascending: false)
+        if let cached: [DashboardItem] = getCachedValue(from: cache, forKey: "dashboard_items") {
+            return cached
+        }
+        
+        let response: PostgrestResponse<[DashboardItem]> = try await supabase.database
+            .from("dashboard_items")
+            .select()
+            .eq(column: "user_id", value: userId.uuidString)
+            .order(column: "created_at", ascending: false)
             .execute()
         
-        let items: [DashboardItem] = try response.value
+        let items = try response.value
         setCachedValue(items, in: cache, forKey: "dashboard_items")
         return items
     }
     
     func fetchWeeklyColumns() async throws -> [WeeklyColumn] {
-        let response = try await select(from: "weekly_columns")
-            .order("publish_date", ascending: false)
-            .limit(5)
+        return try await supabase.database
+            .from("weekly_columns")
+            .select()
+            .order(column: "publish_date", ascending: false)
+            .limit(count: 5)
             .execute()
-        
-        return try response.value
+            .value
     }
     
     func fetchRecentActivity() async throws -> [ActivityItem] {
-        let response = try await select(from: "user_activity")
-            .eq("user_id", value: userId)
-            .order("created_at", ascending: false)
-            .limit(10)
+        return try await supabase.database
+            .from("user_activity")
+            .select()
+            .eq(column: "user_id", value: userId.uuidString)
+            .order(column: "created_at", ascending: false)
+            .limit(count: 10)
             .execute()
-        
-        return try response.value
+            .value
     }
     
     func fetchStats() async throws -> UserStats {
-        let response = try await select(from: "user_stats")
-            .eq("user_id", value: userId)
+        return try await supabase.database
+            .from("user_stats")
+            .select()
+            .eq(column: "user_id", value: userId.uuidString)
             .single()
             .execute()
-        
-        return try response.value
+            .value
     }
     
     func fetchRecommendations() async throws -> [RecommendedItem] {
-        let response = try await select(from: "recommendations")
-            .eq("user_id", value: userId)
-            .eq("is_active", value: true)
-            .order("priority", ascending: false)
-            .limit(5)
+        return try await supabase.database
+            .from("recommendations")
+            .select()
+            .eq(column: "user_id", value: userId.uuidString)
+            .eq(column: "is_active", value: true)
+            .order(column: "priority", ascending: false)
+            .limit(count: 10)
             .execute()
-        
-        return try response.value
+            .value
     }
     
     private func invalidateCache() {
@@ -126,24 +136,6 @@ struct ActivityItem: Codable, Identifiable {
         case description
         case metadata
         case createdAt = "created_at"
-    }
-}
-
-struct UserStats: Codable {
-    let userId: UUID
-    let coursesCompleted: Int
-    let testsCompleted: Int
-    let weeklyColumnsRead: Int
-    let totalTimeSpent: TimeInterval
-    let lastActive: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case coursesCompleted = "courses_completed"
-        case testsCompleted = "tests_completed"
-        case weeklyColumnsRead = "weekly_columns_read"
-        case totalTimeSpent = "total_time_spent"
-        case lastActive = "last_active"
     }
 }
 

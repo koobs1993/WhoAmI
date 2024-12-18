@@ -25,6 +25,17 @@ class OnboardingViewModel: ObservableObject {
     @Published var education: Education?
     @Published var lifePlans = ""
     
+    var canProceed: Bool {
+        switch currentStep {
+        case .welcome:
+            return !firstName.isEmpty && !lastName.isEmpty
+        case .personalInfo:
+            return !email.isEmpty && email.contains("@")
+        default:
+            return true
+        }
+    }
+    
     init(supabase: SupabaseClient) {
         self.supabase = supabase
         self.service = OnboardingService(supabase: supabase)
@@ -77,6 +88,63 @@ class OnboardingViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        // Add your onboarding completion logic here
+        let profile = UserResearchProfile(
+            id: UUID(),
+            userId: userId,
+            profile: UserProfile(
+                id: UUID(),
+                userId: userId,
+                firstName: firstName,
+                lastName: lastName,
+                email: email,
+                gender: Optional<Gender>.none,
+                role: UserRole.user,
+                avatarUrl: Optional<String>.none,
+                bio: Optional<String>.none,
+                phone: Optional<String>.none,
+                isActive: true,
+                emailConfirmedAt: Optional<Date>.none,
+                createdAt: Date(),
+                updatedAt: Date()
+            ),
+            ageRange: nil,
+            education: education,
+            expectation: nil,
+            primaryMotivator: nil,
+            activityFrequency: nil,
+            lifePlans: [lifePlans],
+            completedAt: Date()
+        )
+        
+        try await service.saveUserProfile(profile)
+    }
+    
+    func createUserProfile(firstName: String, lastName: String, email: String) async throws {
+        let profile = UserProfile(
+            id: UUID(),
+            userId: UUID(),
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            gender: Gender?.none,
+            role: UserRole.user,
+            avatarUrl: Optional<String>.none,
+            bio: Optional<String>.none,
+            phone: Optional<String>.none,
+            isActive: true,
+            emailConfirmedAt: Optional<Date>.none,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        
+        try await service.createProfile(profile)
+    }
+    
+    func fetchQuestions() async {
+        do {
+            questions = try await service.fetchQuestions()
+        } catch {
+            print("Error fetching questions: \(error)")
+        }
     }
 } 

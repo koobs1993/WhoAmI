@@ -1,66 +1,35 @@
 import SwiftUI
+import Supabase
 
 struct CourseListView: View {
-    @StateObject var viewModel: CourseViewModel
+    @StateObject private var viewModel: CourseViewModel
+    
+    init(supabase: SupabaseClient) {
+        _viewModel = StateObject(wrappedValue: CourseViewModel(supabase: supabase))
+    }
     
     var body: some View {
-        NavigationView {
-            if viewModel.isLoading {
-                ProgressView()
-            } else {
-                List(viewModel.courses) { course in
-                    NavigationLink(destination: CourseDetailView(course: course, viewModel: viewModel)) {
-                        CourseRowView(course: course)
-                    }
-                }
-                .navigationTitle("Courses")
-                .task {
-                    await viewModel.fetchCourses()
-                }
-            }
+        List(viewModel.courses) { course in
+            CourseRow(course: course)
+        }
+        .navigationTitle("Courses")
+        .task {
+            try? await viewModel.loadCourses()
         }
     }
 }
 
-struct CourseRowView: View {
+struct CourseRow: View {
     let course: Course
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading) {
             Text(course.title)
                 .font(.headline)
-            
             Text(course.description)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-                .lineLimit(2)
-            
-            HStack {
-                if let imageUrl = course.imageUrl {
-                    AsyncImage(url: URL(string: imageUrl)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 60, height: 60)
-                            .cornerRadius(8)
-                    } placeholder: {
-                        Color.gray.opacity(0.2)
-                            .frame(width: 60, height: 60)
-                            .cornerRadius(8)
-                    }
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "clock.fill")
-                    Text("\(course.estimatedDuration ?? 0) min")
-                        .font(.caption)
-                }
-                .foregroundColor(.secondary)
-            }
         }
-        .padding(.vertical, 8)
     }
 }
 
@@ -82,8 +51,17 @@ struct CourseEmptyStateView: View {
     }
 }
 
+struct CourseListView_Previews: PreviewProvider {
+    static var previews: some View {
+        let viewModel = CourseViewModel(supabase: Config.supabaseClient)
+        CourseListView(supabase: Config.supabaseClient)
+            .environmentObject(AuthManager(supabase: Config.supabaseClient))
+            .environmentObject(viewModel)
+    }
+}
+
 #Preview {
-    let viewModel = CourseViewModel(supabase: Config.supabaseClient, userId: UUID())
-    return CourseListView(viewModel: viewModel)
+    let viewModel = CourseViewModel(supabase: Config.supabaseClient)
+    CourseListView(supabase: Config.supabaseClient)
         .environmentObject(AuthManager(supabase: Config.supabaseClient))
 } 

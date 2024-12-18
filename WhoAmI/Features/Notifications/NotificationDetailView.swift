@@ -5,104 +5,76 @@ struct NotificationDetailView: View {
     let onAction: (NotificationAction) -> Void
     
     var body: some View {
-        VStack(spacing: 16) {
-            ScrollView {
-                // Header
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: notification.type.icon)
+                    .font(.title2)
+                    .foregroundColor(notification.type.color)
+                
+                Text(notification.title)
+                    .font(.headline)
+            }
+            
+            Text(notification.message)
+                .font(.body)
+                .foregroundColor(.secondary)
+            
+            let actions = NotificationAction.actions(for: notification.type, metadata: notification.metadata)
+            if !actions.isEmpty {
                 HStack {
-                    Image(systemName: notification.type.icon)
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(notification.type.color)
-                        .cornerRadius(12)
-                    
-                    VStack(alignment: .leading) {
-                        Text(notification.title)
-                            .font(.headline)
-                        Text(notification.createdAt, style: .relative)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-                
-                // Content
-                Text(notification.message)
-                    .padding()
-                
-                // Actions
-                if let metadata = notification.metadata {
-                    ForEach(NotificationAction.actions(for: notification.type, metadata: metadata)) { action in
-                        Button(action: { onAction(action) }) {
-                            HStack {
-                                Image(systemName: action.icon)
-                                Text(action.title)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.accentColor)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                    ForEach(actions) { action in
+                        Button(action: {
+                            onAction(action)
+                        }) {
+                            Text(action.title)
+                                .font(.subheadline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
                         }
-                        .padding(.horizontal)
                     }
                 }
             }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-struct NotificationAction: Identifiable {
-    let id = UUID()
-    let type: ActionType
-    let title: String
-    let icon: String
-    let metadata: [String: String]
-    
-    enum ActionType {
-        case openURL
-        case openCourse
-        case openTest
-        case openChat
-    }
-    
-    static func actions(for type: NotificationType, metadata: [String: String]) -> [NotificationAction] {
-        switch type {
-        case .courseUpdate:
-            return [NotificationAction(type: .openCourse, title: "View Course", icon: "book", metadata: metadata)]
-        case .testReminder:
-            return [NotificationAction(type: .openTest, title: "Start Test", icon: "pencil", metadata: metadata)]
-        case .message:
-            return [NotificationAction(type: .openChat, title: "View Message", icon: "message", metadata: metadata)]
-        case .achievement:
-            return [NotificationAction(type: .openURL, title: "View Achievement", icon: "trophy", metadata: metadata)]
-        case .system:
-            if let urlString = metadata["url"] {
-                return [NotificationAction(type: .openURL, title: "Learn More", icon: "arrow.right", metadata: metadata)]
+            
+            HStack {
+                Text(notification.createdAt, style: .relative)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if notification.read {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                }
             }
-            return []
         }
+        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
 }
 
-#Preview {
-    NavigationView {
+// Preview provider
+struct NotificationDetailView_Previews: PreviewProvider {
+    static var previews: some View {
         NotificationDetailView(
             notification: UserNotification(
                 id: UUID(),
                 userId: UUID(),
                 type: .courseUpdate,
-                title: "Course Update",
-                message: "New content available in your course",
+                title: "New Course Available",
+                message: "Check out our new course on SwiftUI!",
                 metadata: ["course_id": UUID().uuidString],
-                isRead: false,
+                read: false,
                 createdAt: Date()
-            )
-        ) { action in
-            print("Action: \(action)")
-        }
+            ),
+            onAction: { _ in }
+        )
+        .previewLayout(.sizeThatFits)
+        .padding()
     }
 } 

@@ -1,23 +1,27 @@
 import Foundation
 import Supabase
-import SwiftUI
 
 @MainActor
-class AuthManager: BaseService, ObservableObject {
-    @Published var currentUser: User?
+class AuthManager: ObservableObject {
+    let supabase: SupabaseClient
+    
     @Published var isAuthenticated = false
-    @Published var error: AuthModels.AuthError?
-    @Published var isVerifyingEmail = false
+    @Published var currentUser: User?
     @Published var isLoading = false
     
-    override init(supabase: SupabaseClient = Config.supabaseClient) {
-        super.init(supabase: supabase)
-        Task {
-            await checkSession()
-        }
+    var client: SupabaseClient {
+        supabase
     }
     
-    func signUp(data: SignUpData) async throws {
+    var currentUserId: UUID? {
+        currentUser?.id
+    }
+    
+    init(supabase: SupabaseClient) {
+        self.supabase = supabase
+    }
+    
+    func signUp(data: AuthModels.SignUpData) async throws {
         isLoading = true
         defer { isLoading = false }
         
@@ -27,7 +31,7 @@ class AuthManager: BaseService, ObservableObject {
                 password: data.password
             )
             
-            guard let user = authResponse.user else {
+            if authResponse.user == nil {
                 throw AuthModels.AuthError.signUpFailed("Failed to get user data")
             }
             
@@ -40,74 +44,60 @@ class AuthManager: BaseService, ObservableObject {
         }
     }
     
-    func sendVerificationEmail(email: String) async throws {
-        isVerifyingEmail = true
-        defer { isVerifyingEmail = false }
-        
-        do {
-            try await supabase.auth.verifyOTP(
-                email: email,
-                token: "", // Token will be sent via email
-                type: .signup
-            )
-        } catch {
-            throw AuthModels.AuthError.verificationFailed(error.localizedDescription)
-        }
-    }
-    
     func signIn(email: String, password: String) async throws {
         isLoading = true
         defer { isLoading = false }
         
-        do {
-            let authResponse = try await supabase.auth.signIn(
-                email: email,
-                password: password
-            )
-            
-            guard let user = authResponse.user else {
-                throw AuthModels.AuthError.signInFailed("No user returned")
-            }
-            
-            if user.emailConfirmedAt == nil {
-                throw AuthModels.AuthError.emailNotVerified
-            }
-            
-            self.currentUser = try await fetchUserProfile(userId: user.id)
-            self.isAuthenticated = true
-            
-        } catch let error as AuthModels.AuthError {
-            throw error
-        } catch {
-            throw AuthModels.AuthError.signInFailed(error.localizedDescription)
-        }
-    }
-    
-    func fetchUserProfile(userId: UUID) async throws -> User {
-        guard let user = try await selectOne(from: "users") as User? else {
-            throw AuthModels.AuthError.userNotFound
-        }
-        return user
+        let authResponse = try await supabase.auth.signIn(
+            email: email,
+            password: password
+        )
+        
+        self.currentUser = authResponse.user
+        self.isAuthenticated = true
     }
     
     func signOut() async throws {
+        try await supabase.auth.signOut()
+        self.currentUser = nil
+        self.isAuthenticated = false
+    }
+    
+    func refreshSession() async {
         do {
-            try await supabase.auth.signOut()
+            let session = try await supabase.auth.session
+            self.currentUser = session.user
+            self.isAuthenticated = self.currentUser != nil
+        } catch {
             self.currentUser = nil
             self.isAuthenticated = false
-        } catch {
-            throw AuthModels.AuthError.signOutFailed(error.localizedDescription)
+            print("Failed to refresh session: \(error)")
         }
+    }
+    
+    private func sendVerificationEmail(email: String) async throws {
+        try await supabase.auth.signUp(
+            email: email,
+            password: UUID().uuidString // Temporary password that will be reset
+        )
+    }
+    
+    func resetPassword(email: String) async throws {
+        try await supabase.auth.resetPasswordForEmail(email)
+    }
+    
+    func updatePassword(newPassword: String) async throws {
+        try await supabase.auth.update(user: UserAttributes(password: newPassword))
     }
     
     func checkSession() async {
         do {
-            if let session = try await supabase.auth.session {
-                self.currentUser = try await fetchUserProfile(userId: session.user.id)
-                self.isAuthenticated = true
-            }
+            let session = try await supabase.auth.session
+            self.currentUser = session.user
+            self.isAuthenticated = true
         } catch {
-            self.error = .signInFailed(error.localizedDescription)
+            self.currentUser = nil
+            self.isAuthenticated = false
         }
     }
 } 

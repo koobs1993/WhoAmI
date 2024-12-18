@@ -39,18 +39,23 @@ struct MessageView: View {
 }
 
 struct TypingIndicatorView: View {
-    let typingUsers: Set<UUID>
+    let typingUsers: Set<String>
     
     var body: some View {
-        if !typingUsers.isEmpty {
-            HStack {
-                Text("\(typingUsers.count) \(typingUsers.count == 1 ? "person" : "people") typing...")
+        HStack {
+            ForEach(Array(typingUsers), id: \.self) { userName in
+                Text(userName)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Spacer()
             }
-            .padding(.horizontal)
+            if !typingUsers.isEmpty {
+                Text("typing...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(), value: true)
+            }
         }
+        .padding(.horizontal)
     }
 }
 
@@ -63,7 +68,7 @@ struct MessageInput: View {
         HStack {
             TextField("Type a message...", text: $text)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .onChange(of: text) { newValue in
+                .onChange(of: text) { oldValue, newValue in
                     onTyping(!newValue.isEmpty)
                 }
             
@@ -92,7 +97,7 @@ struct MessageInput: View {
     }
 }
 
-struct TypingIndicator: View {
+struct ChatTypingIndicator: View {
     let userNames: [String]
     
     var body: some View {
@@ -122,28 +127,18 @@ struct TypingIndicator: View {
 }
 
 #Preview {
-    VStack(spacing: 20) {
-        MessageBubble(message: ChatMessage(
+    VStack {
+        MessageView(message: ChatMessage(
             id: UUID(),
             sessionId: UUID(),
-            userId: UUID(),
-            role: .user,
-            content: "Hello, this is a user message",
-            metadata: nil,
-            createdAt: Date()
-        ), isCurrentUser: true)
-        
-        MessageBubble(message: ChatMessage(
-            id: UUID(),
-            sessionId: UUID(),
-            userId: UUID(),
+            userId: nil,
             role: .assistant,
-            content: "This is an assistant response",
+            content: "Hello! How can I help you today?",
             metadata: nil,
             createdAt: Date()
-        ), isCurrentUser: false)
+        ))
         
-        TypingIndicator(userNames: ["John", "Jane"])
+        TypingIndicatorView(typingUsers: ["John", "Jane"])
     }
     .padding()
 }

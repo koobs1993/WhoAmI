@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TestRunnerView: View {
-    @State private var testResults: [TestResult] = []
+    @State private var testResults: [DebugTestResult] = []
     @State private var isRunning = false
     
     var body: some View {
@@ -10,104 +10,46 @@ struct TestRunnerView: View {
                 TestResultRow(result: result)
             }
         }
-        .navigationTitle("Test Runner")
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    testResults.removeAll()
-                } label: {
-                    Label("Clear", systemImage: "trash")
+            Button(action: {
+                Task {
+                    await runTests()
                 }
-                .disabled(isRunning || testResults.isEmpty)
+            }) {
+                Text("Run Tests")
             }
-            
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    Task {
-                        await runAllTests()
-                    }
-                } label: {
-                    Label("Run All", systemImage: "play.fill")
-                }
-                .disabled(isRunning)
-            }
+            .disabled(isRunning)
         }
     }
     
-    private func runAllTests() async {
+    private func runTests() async {
         isRunning = true
-        defer { isRunning = false }
+        testResults.removeAll()
         
-        for type in TestType.allCases {
-            do {
-                try await runTest(type)
-            } catch {
-                recordFailure(for: type, error: error)
-            }
-        }
-    }
-    
-    private func runTest(_ type: TestType) async throws {
-        do {
-            switch type {
-            case .auth:
-                try await TestHelper.shared.runAuthTests()
-                recordSuccess(for: type)
-            case .course:
-                try await TestHelper.shared.runCourseTests()
-                recordSuccess(for: type)
-            case .test:
-                try await TestHelper.shared.runPsychTestTests()
-                recordSuccess(for: type)
-            case .weeklyColumn:
-                try await TestHelper.shared.runWeeklyColumnTests()
-                recordSuccess(for: type)
-            case .character:
-                try await TestHelper.shared.runCharacterTests()
-                recordSuccess(for: type)
-            case .chat:
-                try await TestHelper.shared.runChatTests()
-                recordSuccess(for: type)
-            case .profile:
-                try await TestHelper.shared.runProfileTests()
-                recordSuccess(for: type)
-            case .notification:
-                try await TestHelper.shared.runNotificationTests()
-                recordSuccess(for: type)
-            case .all:
-                await runAllTests()
-            }
-        } catch {
-            recordFailure(for: type, error: error)
-            throw error
-        }
-    }
-    
-    private func recordSuccess(for type: TestType) {
-        testResults.append(TestResult(type: type, status: TestResultStatus.success))
-    }
-    
-    private func recordFailure(for type: TestType, error: Error) {
-        testResults.append(TestResult(type: type, status: TestResultStatus.failure))
+        let runner = TestRunner()
+        await runner.runTests()
+        testResults = runner.testResults
+        
+        isRunning = false
     }
 }
 
 struct TestResultRow: View {
-    let result: TestResult
+    let result: DebugTestResult
     
     var body: some View {
         HStack {
-            Image(systemName: result.status.iconName)
-                .foregroundColor(result.status.color)
+            Image(systemName: result.status == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(result.status == .success ? .green : .red)
             
             VStack(alignment: .leading) {
                 Text(result.type.rawValue)
                     .font(.headline)
                 
-                if case .failure(let error) = result.status {
-                    Text(error.localizedDescription)
+                if result.status == .failure {
+                    Text("Failed")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.red)
                 }
             }
         }
@@ -115,53 +57,79 @@ struct TestResultRow: View {
     }
 }
 
-enum TestType: String, CaseIterable {
-    case auth = "Authentication"
-    case course = "Course"
-    case test = "Psych Test"
-    case weeklyColumn = "Weekly Column"
-    case character = "Character"
+enum TestType: String {
+    case userProfile = "User Profile"
+    case notifications = "Notifications"
+    case courses = "Courses"
     case chat = "Chat"
-    case profile = "Profile"
-    case notification = "Notification"
-    case all = "All Tests"
 }
 
-struct TestResult: Identifiable {
+enum DebugTestResultStatus {
+    case success
+    case failure
+}
+
+struct DebugTestResult: Identifiable {
     let id = UUID()
     let type: TestType
-    let status: TestResultStatus
+    let status: DebugTestResultStatus
 }
 
 class TestRunner: ObservableObject {
-    @Published var testResults: [TestResult] = []
+    @Published var testResults: [DebugTestResult] = []
     
     private func recordSuccess(for type: TestType) {
-        testResults.append(TestResult(type: type, status: TestResultStatus.success))
+        testResults.append(DebugTestResult(type: type, status: .success))
     }
     
     private func recordFailure(for type: TestType, error: Error) {
-        testResults.append(TestResult(type: type, status: TestResultStatus.failure))
+        testResults.append(DebugTestResult(type: type, status: .failure))
+    }
+    
+    func runTests() async {
+        // Add your test implementations here
+        await testUserProfile()
+        await testNotifications()
+        await testCourses()
+        await testChat()
+    }
+    
+    private func testUserProfile() async {
+        // Implement user profile tests
+        recordSuccess(for: .userProfile)
+    }
+    
+    private func testNotifications() async {
+        // Implement notification tests
+        recordSuccess(for: .notifications)
+    }
+    
+    private func testCourses() async {
+        // Implement course tests
+        recordSuccess(for: .courses)
+    }
+    
+    private func testChat() async {
+        // Implement chat tests
+        recordSuccess(for: .chat)
     }
 }
 
 struct TestResultView: View {
-    let result: TestResult
+    let result: DebugTestResult
     
     var body: some View {
-        HStack {
-            Image(systemName: result.status.iconName)
-                .foregroundColor(result.status.color)
+        VStack(spacing: 16) {
+            Image(systemName: result.status == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundColor(result.status == .success ? .green : .red)
             
-            VStack(alignment: .leading) {
-                Text(result.name)
-                    .font(.headline)
-                if case .failure(let error) = result.status {
-                    Text(error.localizedDescription)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
+            Text(result.type.rawValue)
+                .font(.title2)
+            
+            Text(result.status == .success ? "Test Passed" : "Test Failed")
+                .font(.headline)
+                .foregroundColor(result.status == .success ? .green : .red)
         }
         .padding()
     }

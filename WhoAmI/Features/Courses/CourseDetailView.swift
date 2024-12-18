@@ -72,12 +72,10 @@ struct LessonRow: View {
                 }
             }
             
-            if let content = lesson.content {
-                Text(content)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-            }
+            Text(lesson.content)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))
@@ -88,7 +86,6 @@ struct LessonRow: View {
 
 #Preview {
     CourseDetailView(viewModel: CourseViewModel(
-        supabase: Config.supabaseClient,
-        userId: UUID()
+        supabase: Config.supabaseClient
     ))
 } 
