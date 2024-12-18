@@ -3,16 +3,16 @@ import Foundation
 public struct UserDeviceSettings: Codable {
     public let id: UUID
     public let userId: UUID
-    public let notificationsEnabled: Bool
-    public let courseUpdatesEnabled: Bool
-    public let testRemindersEnabled: Bool
-    public let weeklySummariesEnabled: Bool
-    public let analyticsEnabled: Bool
-    public let trackingAuthorized: Bool
-    public let darkModeEnabled: Bool
-    public let hapticsEnabled: Bool
-    public let fontSize: Int
-    public let soundEnabled: Bool
+    public var notificationsEnabled: Bool
+    public var courseUpdatesEnabled: Bool
+    public var testRemindersEnabled: Bool
+    public var weeklySummariesEnabled: Bool
+    public var analyticsEnabled: Bool
+    public var trackingAuthorized: Bool
+    public var darkModeEnabled: Bool
+    public var hapticsEnabled: Bool
+    public var fontSize: Int
+    public var soundEnabled: Bool
     public let createdAt: Date
     public let updatedAt: Date
     

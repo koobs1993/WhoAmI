@@ -39,23 +39,19 @@ class TestSessionViewModel: ObservableObject {
             questions = test.questions
             
             // Create or update test progress
-            let progress = TestProgress(
-                userId: userId,
-                testId: test.id,
-                status: .inProgress,
-                currentQuestionIndex: 0,
-                answers: [:]
-            )
-            
-            try await supabase.database.from("test_progress")
+            try await supabase.database
+                .from("testprogress")
                 .upsert([
-                    "user_id": progress.userId.uuidString,
-                    "test_id": progress.testId.uuidString,
-                    "status": progress.status.rawValue,
-                    "current_question_index": progress.currentQuestionIndex,
-                    "answers": progress.answers,
-                    "last_updated": ISO8601DateFormatter().string(from: progress.lastUpdated)
+                    "id": UUID().uuidString,
+                    "user_id": userId.uuidString,
+                    "test_id": test.id.uuidString,
+                    "status": TestStatus.inProgress.rawValue,
+                    "current_question_index": "0",
+                    "answers": "{}",
+                    "score": nil,
+                    "last_updated": ISO8601DateFormatter().string(from: Date())
                 ])
+                .execute()
         } catch {
             self.error = error
             throw error
@@ -82,23 +78,23 @@ class TestSessionViewModel: ObservableObject {
     private func saveProgress() async {
         do {
             isLoading = true
-            let progress = TestProgress(
-                userId: userId,
-                testId: test.id,
-                status: isComplete ? .completed : .inProgress,
-                currentQuestionIndex: currentQuestionIndex,
-                answers: answers
-            )
             
-            try await supabase.database.from("test_progress")
+            let answersJson = try JSONEncoder().encode(answers)
+            let answersString = String(data: answersJson, encoding: .utf8) ?? "{}"
+            
+            try await supabase.database
+                .from("testprogress")
                 .upsert([
-                    "user_id": progress.userId.uuidString,
-                    "test_id": progress.testId.uuidString,
-                    "status": progress.status.rawValue,
-                    "current_question_index": progress.currentQuestionIndex,
-                    "answers": progress.answers,
-                    "last_updated": ISO8601DateFormatter().string(from: progress.lastUpdated)
+                    "id": UUID().uuidString,
+                    "user_id": userId.uuidString,
+                    "test_id": test.id.uuidString,
+                    "status": (isComplete ? TestStatus.completed : .inProgress).rawValue,
+                    "current_question_index": String(currentQuestionIndex),
+                    "answers": answersString,
+                    "score": nil,
+                    "last_updated": ISO8601DateFormatter().string(from: Date())
                 ])
+                .execute()
             
             isLoading = false
         } catch {

@@ -13,24 +13,31 @@ struct Config {
     static let openAIAPIKey = "YOUR_OPENAI_API_KEY"
     
     static let defaultSettings = UserDeviceSettings(
+        id: UUID(),
+        userId: UUID(), // This will be replaced with actual user ID when used
         notificationsEnabled: true,
-        theme: "system",
-        language: "en",
         courseUpdatesEnabled: true,
         testRemindersEnabled: true,
         weeklySummariesEnabled: true,
-        analyticsEnabled: false,
-        trackingAuthorized: false,
+        analyticsEnabled: true,
+        trackingAuthorized: true,
         darkModeEnabled: false,
         hapticsEnabled: true,
         fontSize: 16,
-        soundEnabled: true
+        soundEnabled: true,
+        createdAt: Date(),
+        updatedAt: Date()
     )
     
     static let defaultPrivacySettings = UserPrivacySettings(
-        showProfile: true,
+        id: UUID(),
+        userId: UUID(), // This will be replaced with actual user ID when used
+        isPublic: true,
+        showEmail: false,
+        showLocation: false,
         showActivity: true,
-        allowMessages: true,
-        shareProgress: true
+        showStats: true,
+        createdAt: Date(),
+        updatedAt: Date()
     )
 }

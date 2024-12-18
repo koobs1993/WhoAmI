@@ -208,7 +208,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AppDelegateProtocol {
                 
                 let userId = session.user.id.uuidString
                 
-                try await supabase.from("device_tokens")
+                try await supabase.database
+                    .from("device_tokens")
                     .upsert([
                         "user_id": userId,
                         "token": tokenString,
@@ -240,7 +241,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AppDelegateProtocol {
                 let notificationData = try JSONSerialization.data(withJSONObject: userInfo)
                 let notificationString = String(data: notificationData, encoding: .utf8) ?? "{}"
                 
-                try await supabase.from("notification_interactions")
+                try await supabase.database
+                    .from("notification_interactions")
                     .insert([
                         "user_id": userId,
                         "notification_data": notificationString,
@@ -273,7 +275,8 @@ extension SupabaseClient {
         let session = try await auth.session
         let userId = session.user.id
         
-        try await from("device_tokens")
+        try await database
+            .from("device_tokens")
             .upsert([
                 "user_id": userId.uuidString,
                 "device_token": token,
@@ -285,7 +288,8 @@ extension SupabaseClient {
         let session = try await auth.session
         let userId = session.user.id
         
-        try await from("notification_interactions")
+        try await database
+            .from("notification_interactions")
             .insert([
                 "notification_id": notificationId,
                 "user_id": userId.uuidString,

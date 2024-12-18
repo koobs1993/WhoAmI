@@ -1,52 +1,50 @@
 import Foundation
 import Supabase
 
-extension SupabaseClient {
-    func database(_ table: String) async -> PostgrestQueryBuilder {
-        return await self.database.from(table)
-    }
-    
-    func from(_ table: String) async -> PostgrestQueryBuilder {
-        return await self.database.from(table)
-    }
-}
-
-class BaseService {
+public class BaseService {
     let supabase: SupabaseClient
+    var cache: CacheProtocol?
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
     }
     
-    // Helper method to handle database errors
-    func handleDatabaseError(_ error: Error) -> Error {
-        print("Database error: \(error)")
-        if let postgrestError = error as? PostgrestError {
-            let message = String(describing: postgrestError)
-            return NSError(domain: "DatabaseError", code: 1001, userInfo: [
-                NSLocalizedDescriptionKey: "Database error: \(message)"
-            ])
+    func setupCache(_ cache: CacheProtocol) {
+        self.cache = cache
+    }
+    
+    func getCachedValue<T: Codable>(_ type: T.Type, forKey key: String) -> T? {
+        return cache?.get(type, forKey: key)
+    }
+    
+    func setCachedValue<T: Codable>(_ value: T, forKey key: String) {
+        cache?.set(value, forKey: key)
+    }
+    
+    func removeCachedValue(forKey key: String) {
+        cache?.remove(forKey: key)
+    }
+    
+    func clearCache() {
+        cache?.clear()
+    }
+    
+    // Helper for database operations
+    func toJsonString<T: Encodable>(_ value: T) -> String? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(value) {
+            return String(data: data, encoding: .utf8)
         }
-        return error
+        return nil
     }
     
-    // Helper method to format dates for database
-    func formatDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
-    
-    // Helper method to parse dates from database
-    func parseDate(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: string)
-    }
-    
-    // Helper method to convert values to strings for database
-    func toString(_ value: Any?) -> String? {
-        guard let value = value else { return nil }
-        return String(describing: value)
+    func fromJsonString<T: Decodable>(_ string: String, as type: T.Type) -> T? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let data = string.data(using: .utf8) {
+            return try? decoder.decode(type, from: data)
+        }
+        return nil
     }
 }

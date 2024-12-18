@@ -1,137 +1,168 @@
 import Foundation
 import Supabase
-import SwiftUI
+
+enum TestError: Error {
+    case invalidTest
+    case invalidQuestion
+    case invalidResponse
+    case networkError
+    case databaseError
+}
 
 @MainActor
 class TestViewModel: ObservableObject {
-    @Published var tests: [PsychTest] = []
-    @Published var filteredTests: [PsychTest] = []
+    @Published var test: PsychTest?
+    @Published var currentQuestionIndex = 0
+    @Published var responses: [String: String] = [:]
     @Published var isLoading = false
     @Published var error: Error?
-    @Published var selectedCategory: TestCategory?
-    @Published var searchText = ""
+    @Published var progress: Double = 0.0
     @Published var isComplete = false
-    @Published var responses: [Int: String] = [:]
+    @Published var score: Int?
     
     private let supabase: SupabaseClient
     private let userId: UUID
     private let testId: UUID
-    private let cache = NSCache<NSString, CacheEntry<[PsychTest]>>()
-    private let cacheDuration: TimeInterval = 300 // 5 minutes
     
     init(supabase: SupabaseClient, userId: UUID, testId: UUID) {
         self.supabase = supabase
         self.userId = userId
         self.testId = testId
-        setupCache()
     }
     
-    private func setupCache() {
-        cache.countLimit = 50
-        cache.totalCostLimit = 10 * 1024 * 1024 // 10MB
+    var currentQuestion: PsychTest.TestQuestion? {
+        guard let test = test,
+              currentQuestionIndex < test.questions.count else {
+            return nil
+        }
+        return test.questions[currentQuestionIndex]
     }
     
-    func fetchTests() async throws {
+    func loadTest() async throws {
         isLoading = true
         defer { isLoading = false }
         
-        let response: PostgrestResponse<[PsychTest]> = try await supabase.database
-            .from("tests")
-            .select()
-            .eq("is_active", value: true)
+        do {
+            let response: PostgrestResponse<PsychTest> = try await supabase.database
+                .from("psychtests")
+                .select("""
+                    id,
+                    title,
+                    short_description,
+                    category,
+                    image_url,
+                    duration_minutes,
+                    is_active,
+                    questions (
+                        uuid,
+                        id,
+                        text,
+                        type,
+                        required,
+                        options,
+                        correct_answer,
+                        points
+                    ),
+                    benefits (
+                        id,
+                        title,
+                        description
+                    ),
+                    created_at,
+                    updated_at
+                """)
+                .eq("id", value: testId)
+                .single()
+                .execute()
+            
+            test = response.value
+            updateProgress()
+        } catch {
+            self.error = error
+            throw error
+        }
+    }
+    
+    func submitResponse(_ response: String) async throws {
+        guard let question = currentQuestion else {
+            throw TestError.invalidQuestion
+        }
+        
+        responses[question.id.uuidString] = response
+        updateProgress()
+        
+        if currentQuestionIndex + 1 < (test?.questions.count ?? 0) {
+            currentQuestionIndex += 1
+        } else {
+            try await completeTest()
+        }
+    }
+    
+    private func completeTest() async throws {
+        guard test != nil else {
+            throw TestError.invalidTest
+        }
+        
+        let totalPoints = calculateScore()
+        score = totalPoints
+        isComplete = true
+        
+        // Save progress
+        try await supabase.database
+            .from("testprogress")
+            .upsert([
+                "id": UUID().uuidString,
+                "user_id": userId.uuidString,
+                "test_id": testId.uuidString,
+                "status": TestStatus.completed.rawValue,
+                "score": String(totalPoints),
+                "last_updated": ISO8601DateFormatter().string(from: Date())
+            ])
             .execute()
         
-        tests = response.value
+        // Save detailed results
+        try await saveTestResults(totalPoints)
     }
     
-    func updateFilteredTests() {
-        var filtered = tests
+    private func calculateScore() -> Int {
+        guard let test = test else { return 0 }
         
-        // Apply category filter
-        if let category = selectedCategory {
-            filtered = filtered.filter { $0.category.rawValue == category.rawValue }
-        }
-        
-        // Apply search filter
-        if !searchText.isEmpty {
-            filtered = filtered.filter {
-                $0.title.localizedCaseInsensitiveContains(searchText) ||
-                $0.shortDescription.localizedCaseInsensitiveContains(searchText)
+        return test.questions.reduce(0) { total, question in
+            guard let response = responses[question.id.uuidString],
+                  let correctAnswer = question.correctAnswer,
+                  Int(response) == correctAnswer else {
+                return total
             }
-        }
-        
-        // Sort by status and date
-        filtered.sort { test1, test2 in
-            if let progress1 = test1.userProgress, let progress2 = test2.userProgress {
-                if progress1.status == progress2.status {
-                    return progress1.lastUpdated > progress2.lastUpdated
-                }
-                return progress1.status.rawValue < progress2.status.rawValue
-            }
-            return test1.createdAt > test2.createdAt
-        }
-        
-        self.filteredTests = filtered
-    }
-    
-    func clearCache() {
-        cache.removeAllObjects()
-    }
-    
-    deinit {
-        // If test is in progress and not complete, try to abandon it
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            if !self.isComplete && !self.responses.isEmpty {
-                try? await self.abandonTest()
-            }
+            return total + (question.points)
         }
     }
     
-    func abandonTest() async throws {
-        // Mark test as abandoned in database
-        let values: [String: String] = [
-            "status": TestStatus.abandoned.rawValue,
-            "updated_at": ISO8601DateFormatter().string(from: Date())
+    private func saveTestResults(_ totalPoints: Int) async throws {
+        let data: [String: String] = [
+            "id": UUID().uuidString,
+            "user_id": userId.uuidString,
+            "test_id": testId.uuidString,
+            "score": String(totalPoints),
+            "answers": try encodeToJsonString(responses),
+            "completed_at": ISO8601DateFormatter().string(from: Date())
         ]
         
         try await supabase.database
-            .from("usertests")
-            .update(values)
-            .match([
-                "user_id": userId.uuidString,
-                "test_id": testId.uuidString,
-                "status": TestStatus.inProgress.rawValue
-            ])
+            .from("test_results")
+            .insert(data)
             .execute()
     }
-}
-
-// MARK: - Error Types
-enum TestError: LocalizedError {
-    case invalidResponse
-    case networkError(Error)
-    case databaseError(Error)
     
-    var errorDescription: String? {
-        switch self {
-        case .invalidResponse:
-            return "Invalid response from server"
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
-        case .databaseError(let error):
-            return "Database error: \(error.localizedDescription)"
-        }
+    private func updateProgress() {
+        guard let test = test else { return }
+        progress = Double(responses.count) / Double(test.questions.count)
     }
-}
-
-// MARK: - Cache Entry
-class CacheEntry<T> {
-    let value: T
-    let timestamp: Date
     
-    init(value: T, timestamp: Date = Date()) {
-        self.value = value
-        self.timestamp = timestamp
+    private func encodeToJsonString<T: Encodable>(_ value: T) throws -> String {
+        let data = try JSONEncoder().encode(value)
+        guard let jsonString = String(data: data, encoding: .utf8) else {
+            throw TestError.invalidResponse
+        }
+        return jsonString
     }
 }

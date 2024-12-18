@@ -29,7 +29,7 @@ class DashboardViewModel: ObservableObject {
     private func fetchWeeklyColumns() async {
         do {
             print("Fetching latest weekly column")
-            let response: PostgrestResponse<[WeeklyColumn]> = try await supabase
+            let response: PostgrestResponse<[WeeklyColumn]> = try await supabase.database
                 .from("weekly_columns")
                 .select()
                 .order("created_at", ascending: false)
@@ -47,7 +47,7 @@ class DashboardViewModel: ObservableObject {
     private func fetchOngoingCourses() async {
         do {
             print("Fetching ongoing courses")
-            let response: PostgrestResponse<[Course]> = try await supabase
+            let response: PostgrestResponse<[Course]> = try await supabase.database
                 .from("user_courses")
                 .select("""
                     courses (

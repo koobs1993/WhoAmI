@@ -3,16 +3,19 @@ import Supabase
 
 @MainActor
 class ChatViewModel: ObservableObject {
-    private let chatService: ChatService
-    private var channel: RealtimeChannel?
-    
     @Published var messages: [ChatMessage] = []
     @Published var currentMessage = ""
     @Published var isLoading = false
     @Published var error: Error?
     
-    init(chatService: ChatService) {
+    private let chatService: ChatService
+    private let sessionId: UUID
+    private let userId: UUID
+    
+    init(chatService: ChatService, sessionId: UUID = UUID(), userId: UUID) {
         self.chatService = chatService
+        self.sessionId = sessionId
+        self.userId = userId
         print("ChatViewModel initialized")
         Task {
             await setupChat()
@@ -21,59 +24,49 @@ class ChatViewModel: ObservableObject {
     
     private func setupChat() async {
         await fetchMessages()
-        await connectToRealtimeChannel()
+        await setupRealtimeSubscription()
     }
     
-    private func connectToRealtimeChannel() async {
+    private func setupRealtimeSubscription() async {
         do {
-            // Ensure we have a valid session before subscribing
-            let session = try await chatService.supabase.auth.session
-            print("Setting up realtime channel with session: \(session.accessToken)")
-            
-            channel = chatService.subscribe("chat_messages") { [weak self] message in
-                Task { @MainActor in
-                    self?.messages.append(message)
-                    // Sort messages by timestamp
-                    self?.messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
-                }
+            chatService.subscribe { [weak self] message in
+                guard let self = self else { return }
+                self.messages.append(message)
+                // Sort messages by timestamp
+                self.messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
             }
             
-            print("Successfully subscribed to chat channel")
+            try await chatService.connect()
+            print("Realtime connection established")
         } catch {
-            print("Failed to connect to realtime channel: \(error)")
+            print("Error setting up realtime subscription: \(error)")
             self.error = error
         }
     }
     
-    func sendMessage(_ content: String) async {
-        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    func sendMessage() async {
+        guard !currentMessage.isEmpty else { return }
+        let messageToSend = currentMessage
+        currentMessage = ""
+        isLoading = true
         
         do {
-            // Get the current user's ID from the session
-            let session = try await chatService.supabase.auth.session
-            let userId = session.user.id
-            
-            let message = ChatMessage(
-                sessionId: UUID(),
-                content: content,
-                role: .user,
-                createdAt: Date(),
-                userId: userId
-            )
-            
-            try await chatService.sendMessage(message)
-            currentMessage = ""
+            try await chatService.sendMessage(messageToSend, sessionId: sessionId, userId: userId)
             print("Message sent successfully")
         } catch {
             print("Error sending message: \(error)")
             self.error = error
+            // Restore the message if sending failed
+            currentMessage = messageToSend
         }
+        
+        isLoading = false
     }
     
     private func fetchMessages() async {
         isLoading = true
         do {
-            messages = try await chatService.fetchMessages()
+            messages = try await chatService.fetchMessages(sessionId: sessionId)
             messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
             print("Fetched \(messages.count) messages")
         } catch {
@@ -85,17 +78,11 @@ class ChatViewModel: ObservableObject {
     
     func retryFetch() async {
         error = nil
-        if let channel = channel {
-            chatService.unsubscribe(channel)
-        }
-        channel = nil
         await setupChat()
     }
     
     deinit {
-        if let channel = channel {
-            chatService.unsubscribe(channel)
-        }
+        chatService.disconnect()
         print("ChatViewModel deinitialized")
     }
 }

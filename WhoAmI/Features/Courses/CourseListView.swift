@@ -5,83 +5,37 @@ struct CourseListView: View {
     @StateObject private var viewModel: CourseViewModel
     @EnvironmentObject private var authManager: AuthManager
     
-    init(supabase: SupabaseClient, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: CourseViewModel(supabase: supabase, userId: userId))
+    init(supabase: SupabaseClient) {
+        // We'll use a placeholder viewModel that will be replaced in body
+        _viewModel = StateObject(wrappedValue: CourseViewModel(supabase: supabase, userId: UUID()))
     }
     
     var body: some View {
-        ScrollView {
-            if viewModel.isLoading {
-                ProgressView("Loading courses...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.error {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 50))
-                        .foregroundColor(.red)
-                    
-                    Text("Error Loading Courses")
-                        .font(.headline)
-                    
-                    Text(error.localizedDescription)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                    
-                    Button("Try Again") {
-                        Task {
-                            await loadCourses()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding()
-            } else if viewModel.courses.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "book")
-                        .font(.system(size: 50))
-                        .foregroundColor(.secondary)
-                    
-                    Text("No Courses Available")
-                        .font(.headline)
-                    
-                    Text("Check back later for new courses")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if let userId = authManager.currentUser?.id {
+                // Create a new viewModel with the actual userId
+                let viewModel = CourseViewModel(supabase: authManager.supabase, userId: userId)
+                courseList(viewModel: viewModel)
             } else {
-                LazyVStack(spacing: 16) {
-                    ForEach(viewModel.courses) { course in
-                        NavigationLink(
-                            destination: CourseDetailView(
-                                supabase: authManager.supabase,
-                                userId: authManager.currentUser?.id ?? UUID(),
-                                course: course
-                            )
-                        ) {
-                            CourseCard(course: course)
-                        }
-                    }
-                }
-                .padding()
+                Text("Please sign in to view courses")
             }
-        }
-        .navigationTitle("Courses")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .task {
-            await loadCourses()
         }
     }
     
-    private func loadCourses() async {
-        do {
-            try await viewModel.fetchEnrolledCourses()
-        } catch {
-            print("Error fetching courses: \(error)")
-            viewModel.error = error
+    private func courseList(viewModel: CourseViewModel) -> some View {
+        List {
+            ForEach(viewModel.courses) { course in
+                CourseCard(course: course)
+                    .listRowInsets(EdgeInsets())
+                    .padding(.vertical, 8)
+            }
+        }
+        .listStyle(.plain)
+        .refreshable {
+            try? await viewModel.fetchCourses()
+        }
+        .task {
+            try? await viewModel.fetchCourses()
         }
     }
 }
@@ -148,8 +102,7 @@ struct CourseCard: View {
 #Preview {
     NavigationView {
         CourseListView(
-            supabase: Config.supabaseClient,
-            userId: UUID()
+            supabase: Config.supabaseClient
         )
         .environmentObject(AuthManager(supabase: Config.supabaseClient))
     }

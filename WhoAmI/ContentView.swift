@@ -12,7 +12,9 @@ struct ContentView: View {
                 MainTabView()
                     .environmentObject(authManager)
                     .onAppear {
-                        reviewManager.incrementCount()
+                        Task {
+                            reviewManager.recordAction()
+                        }
                     }
             } else {
                 AuthView(supabase: Config.supabaseClient)
@@ -25,4 +27,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(AuthManager(supabase: Config.supabaseClient))
-} 
+}

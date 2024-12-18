@@ -3,28 +3,27 @@ import Supabase
 
 struct ChatInputView: View {
     @Binding var message: String
+    let isLoading: Bool
     let onSend: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack {
             TextField("Type a message...", text: $message)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                .disabled(isLoading)
             
-            Button(action: {
-                onSend()
-            }) {
-                Image(systemName: "paperplane.fill")
-                    .foregroundColor(.accentColor)
+            Button(action: onSend) {
+                if isLoading {
+                    ProgressView()
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
             }
-            .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(message.isEmpty || isLoading)
         }
         .padding()
-        #if os(iOS)
-        .background(Color(uiColor: .systemBackground))
-        #else
-        .background(Color(nsColor: .textBackgroundColor))
-        #endif
-        .shadow(radius: 2)
+        .background(Color(.windowBackgroundColor))
     }
 }
 
@@ -34,28 +33,24 @@ struct ChatBubble: View {
     
     var body: some View {
         HStack {
-            if isCurrentUser {
-                Spacer()
-            }
+            if isCurrentUser { Spacer() }
             
             VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: 4) {
                 Text(message.content)
-                    .padding(12)
-                    .background(isCurrentUser ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                    .cornerRadius(16)
+                    .padding()
+                    .background(isCurrentUser ? Color.blue : Color(.windowBackgroundColor))
+                    .foregroundColor(isCurrentUser ? .white : .primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 
                 if let date = message.createdAt {
-                    Text(date.formatted(.relative(presentation: .named)))
+                    Text(date, style: .time)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
             }
             
-            if !isCurrentUser {
-                Spacer()
-            }
+            if !isCurrentUser { Spacer() }
         }
-        .padding(.horizontal)
     }
 }
 
@@ -63,16 +58,18 @@ struct ChatEmptyView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "message")
-                .font(.system(size: 50))
-                .foregroundColor(.secondary)
+                .font(.largeTitle)
+                .foregroundColor(.blue)
             
-            Text("No Messages")
+            Text("No messages yet")
                 .font(.headline)
             
-            Text("Start a conversation")
+            Text("Start a conversation to get help and insights")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -81,10 +78,7 @@ struct ChatLoadingView: View {
     var body: some View {
         VStack(spacing: 16) {
             ProgressView()
-                .scaleEffect(1.5)
-            
             Text("Loading messages...")
-                .font(.headline)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -98,10 +92,10 @@ struct ChatErrorView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 50))
+                .font(.largeTitle)
                 .foregroundColor(.red)
             
-            Text("Error Loading Messages")
+            Text("Error loading messages")
                 .font(.headline)
             
             Text(error.localizedDescription)
@@ -109,12 +103,27 @@ struct ChatErrorView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             
-            Button("Try Again") {
-                onRetry()
-            }
-            .buttonStyle(.borderedProminent)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+@available(macOS 13.0, iOS 16.0, *)
+struct ChatSessionRow: View {
+    let session: ChatSession
+    
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(session.title ?? "Untitled Chat")
+                .font(.headline)
+            if let date = session.createdAt {
+                Text(date.formatted())
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }

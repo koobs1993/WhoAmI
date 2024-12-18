@@ -3,28 +3,38 @@ import Foundation
 public struct ChatMessage: Codable, Identifiable {
     public let id: UUID
     public let sessionId: UUID
-    public let userId: UUID?
     public let content: String
     public let role: MessageRole
+    public let userId: UUID?
     public let createdAt: Date?
-    public let metadata: [String: String]?
+    public let updatedAt: Date?
     
     public init(
         id: UUID = UUID(),
         sessionId: UUID,
         content: String,
         role: MessageRole,
-        createdAt: Date? = Date(),
         userId: UUID? = nil,
-        metadata: [String: String]? = nil
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date()
     ) {
         self.id = id
         self.sessionId = sessionId
         self.content = content
         self.role = role
-        self.createdAt = createdAt
         self.userId = userId
-        self.metadata = metadata
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionId = "session_id"
+        case content
+        case role
+        case userId = "user_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }
 
@@ -36,25 +46,30 @@ public enum MessageRole: String, Codable {
 
 public struct ChatSession: Codable, Identifiable {
     public let id: UUID
-    public var title: String?
     public let userId: UUID
-    public let createdAt: Date
-    public var updatedAt: Date
-    public var lastMessage: String?
+    public let title: String?
+    public let createdAt: Date?
+    public let updatedAt: Date?
     
     public init(
         id: UUID = UUID(),
-        title: String? = nil,
         userId: UUID,
-        createdAt: Date = Date(),
-        updatedAt: Date = Date(),
-        lastMessage: String? = nil
+        title: String? = nil,
+        createdAt: Date? = Date(),
+        updatedAt: Date? = Date()
     ) {
         self.id = id
-        self.title = title
         self.userId = userId
+        self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt
-        self.lastMessage = lastMessage
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case title
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }

@@ -1,112 +1,66 @@
-import Foundation
-import Supabase
 import SwiftUI
+import Supabase
 
 @MainActor
 class CharacterDetailViewModel: ObservableObject {
     @Published var character: Character?
-    @Published var problems: [CharacterProblem] = []
-    @Published var relatedCharacters: [Character] = []
-    @Published var showError = false
+    @Published var problems: [Problem] = []
     @Published var isLoading = false
+    @Published var error: Error?
     
     private let supabase: SupabaseClient
-    private let characterId: Int
+    private let characterId: UUID
     
-    init(supabase: SupabaseClient, characterId: Int) {
+    init(supabase: SupabaseClient, characterId: UUID) {
         self.supabase = supabase
         self.characterId = characterId
-        Task {
-            await fetchCharacter()
-        }
     }
     
-    func fetchCharacter() async {
+    func fetchCharacter() async throws {
         isLoading = true
-        do {
-            let query = supabase.from("characters")
-                .select("""
-                id,
-                name,
-                description,
-                bio,
-                image_url,
-                problems!character_problems (
-                    problem:problems (
-                        id,
-                        title,
-                        description,
-                        created_at,
-                        updated_at
-                    )
-                )
-                """)
-                .eq("id", value: characterId)
-                .single()
-            
-            let response: PostgrestResponse<Character> = try await query.execute()
-            character = response.value
-            
-            if let problems = character?.problems {
-                self.problems = problems
-                await fetchRelatedCharacters(problems: problems)
-            }
-        } catch {
-            showError = true
-            print("Error fetching character: \(error)")
-        }
-        isLoading = false
+        defer { isLoading = false }
+        
+        let response: PostgrestResponse<Character> = try await supabase.database
+            .from("characters")
+            .select()
+            .eq("id", value: characterId.uuidString)
+            .single()
+            .execute()
+        
+        character = response.value
+        try await fetchProblems()
     }
     
-    private func fetchRelatedCharacters(problems: [CharacterProblem]) async {
-        do {
-            let problemIds = problems.map { String($0.id) }
+    func fetchProblems() async throws {
+        let response: PostgrestResponse<[Dictionary<String, String>]> = try await supabase.database
+            .from("character_problems")
+            .select("problem_id")
+            .eq("character_id", value: characterId.uuidString)
+            .execute()
+        
+        let problemIds = response.value.compactMap { $0["problem_id"] }
+        
+        if !problemIds.isEmpty {
+            let problemsResponse: PostgrestResponse<[Problem]> = try await supabase.database
+                .from("problems")
+                .select()
+                .or(problemIds.map { "id.eq.\($0)" }.joined(separator: ","))
+                .execute()
             
-            let query = supabase.from("character_problems")
-                .select("""
-                character:characters (
-                    id,
-                    name,
-                    description,
-                    bio,
-                    image_url,
-                    created_at,
-                    updated_at
-                )
-                """)
-                .in("problem_id", value: problemIds)  // Fixed: changed 'values' to 'value'
-                .neq("character_id", value: characterId)
-                .limit(5)
-            
-            let response: PostgrestResponse<[CharacterProblemRelation]> = try await query.execute()
-            relatedCharacters = response.value.compactMap { $0.character }
-        } catch {
-            print("Error fetching related characters: \(error)")
+            problems = problemsResponse.value
         }
     }
     
-    func share() {
-        guard let character = character else { return }
+    func updateCharacter(_ updatedCharacter: Character) async throws {
+        isLoading = true
+        defer { isLoading = false }
         
-        let text = """
-        Check out \(character.name) in our app!
+        try await supabase.database
+            .from("characters")
+            .update(updatedCharacter)
+            .eq("id", value: characterId.uuidString)
+            .execute()
         
-        \(character.bio)
-        
-        Download the app to learn more about \(character.name) and other characters.
-        """
-        
-        #if os(iOS)
-        let activityViewController = UIActivityViewController(
-            activityItems: [text],
-            applicationActivities: nil
-        )
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first,
-           let rootViewController = window.rootViewController {
-            rootViewController.present(activityViewController, animated: true)
-        }
-        #endif
+        character = updatedCharacter
     }
 }

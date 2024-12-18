@@ -4,59 +4,38 @@ import Supabase
 struct CharacterDetailView: View {
     @StateObject private var viewModel: CharacterDetailViewModel
     
-    init(supabase: SupabaseClient, characterId: Int) {
-        _viewModel = StateObject(wrappedValue: CharacterDetailViewModel(supabase: supabase, characterId: characterId))
+    init(supabase: SupabaseClient, characterId: UUID) {
+        _viewModel = StateObject(wrappedValue: CharacterDetailViewModel(
+            supabase: supabase,
+            characterId: characterId
+        ))
     }
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let character = viewModel.character {
+            if let character = viewModel.character {
+                VStack(alignment: .leading, spacing: 16) {
                     CharacterHeaderView(character: character)
+                    Divider()
                     
-                    if !viewModel.problems.isEmpty {
-                        Text("Problems")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        ForEach(viewModel.problems) { problem in
-                            ProblemCard(problem: problem)
-                        }
-                    }
-                    
-                    if !viewModel.relatedCharacters.isEmpty {
-                        Text("Related Characters")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 16) {
-                                ForEach(viewModel.relatedCharacters) { character in
-                                    RelatedCharacterCard(character: character)
-                                }
-                            }
+                    ForEach(viewModel.problems) { problem in
+                        CharacterProblemCard(problem: problem)
                             .padding(.horizontal)
-                        }
                     }
-                } else if viewModel.isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-            .padding()
-        }
-        .navigationTitle(viewModel.character?.name ?? "Character")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: viewModel.share) {
-                    Image(systemName: "square.and.arrow.up")
-                }
+                .padding(.vertical)
+            } else {
+                ProgressView()
+                    .padding()
             }
         }
-        .alert("Error", isPresented: $viewModel.showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Failed to load character details. Please try again later.")
+        .navigationTitle("Character Details")
+        .task {
+            do {
+                try await viewModel.fetchCharacter()
+            } catch {
+                print("Error fetching character: \(error)")
+            }
         }
     }
 }
@@ -65,7 +44,7 @@ struct CharacterHeaderView: View {
     let character: Character
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(character.name)
                 .font(.title)
                 .fontWeight(.bold)
@@ -73,48 +52,68 @@ struct CharacterHeaderView: View {
             Text(character.description)
                 .font(.body)
                 .foregroundColor(.secondary)
+            
+            Text(character.bio)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+            
+            if let imageUrl = character.imageUrl {
+                AsyncImage(url: URL(string: imageUrl)) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 200)
+                } placeholder: {
+                    Color.gray.opacity(0.3)
+                        .frame(height: 200)
+                }
+            }
         }
+        .padding(.horizontal)
     }
 }
 
-struct ProblemCard: View {
-    let problem: CharacterProblem
+struct CharacterProblemCard: View {
+    let problem: Problem
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(problem.title)
                 .font(.headline)
-                .fontWeight(.medium)
             
-            Text(problem.description)
-                .font(.caption)
+            Text(problem.shortDescription)
+                .font(.subheadline)
                 .foregroundColor(.secondary)
+            
+            HStack {
+                Text(problem.createdAt, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text(problem.updatedAt, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding()
-        .background(Color.background)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .windowBackgroundColor))
+        #endif
         .cornerRadius(12)
         .shadow(radius: 2)
     }
 }
 
-struct RelatedCharacterCard: View {
-    let character: Character
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(character.name)
-                .font(.headline)
-                .fontWeight(.medium)
-            
-            Text(character.description)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-        }
-        .frame(width: 200)
-        .padding()
-        .background(Color.background)
-        .cornerRadius(12)
-        .shadow(radius: 2)
+#Preview {
+    NavigationView {
+        CharacterDetailView(
+            supabase: Config.supabaseClient,
+            characterId: UUID()
+        )
     }
-} 
+}

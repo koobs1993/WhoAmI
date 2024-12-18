@@ -12,11 +12,58 @@ public struct PsychTest: Codable, Identifiable {
     public let isActive: Bool
     public let questions: [TestQuestion]
     public let userProgress: TestProgress?
-    public let benefits: [String]?
+    public let benefits: [TestBenefit]
     public let createdAt: Date
     public let updatedAt: Date
     
-    public var estimatedDuration: Int { return durationMinutes }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case shortDescription = "short_description"
+        case category
+        case imageUrl = "image_url"
+        case durationMinutes = "duration_minutes"
+        case isActive = "is_active"
+        case questions
+        case userProgress = "testprogress"
+        case benefits
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        shortDescription = try container.decode(String.self, forKey: .shortDescription)
+        description = shortDescription // Using shortDescription for both
+        category = try container.decode(TestCategory.self, forKey: .category)
+        imageUrl = try? container.decode(URL.self, forKey: .imageUrl)
+        durationMinutes = try container.decode(Int.self, forKey: .durationMinutes)
+        duration = TimeInterval(durationMinutes * 60)
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        questions = try container.decode([TestQuestion].self, forKey: .questions)
+        userProgress = try? container.decodeIfPresent(TestProgress.self, forKey: .userProgress)
+        benefits = try container.decode([TestBenefit].self, forKey: .benefits)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(shortDescription, forKey: .shortDescription)
+        try container.encode(category, forKey: .category)
+        try container.encode(imageUrl, forKey: .imageUrl)
+        try container.encode(durationMinutes, forKey: .durationMinutes)
+        try container.encode(isActive, forKey: .isActive)
+        try container.encode(questions, forKey: .questions)
+        try container.encode(userProgress, forKey: .userProgress)
+        try container.encode(benefits, forKey: .benefits)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
     
     public init(
         id: UUID = UUID(),
@@ -30,7 +77,7 @@ public struct PsychTest: Codable, Identifiable {
         isActive: Bool = true,
         questions: [TestQuestion],
         userProgress: TestProgress? = nil,
-        benefits: [String]? = nil,
+        benefits: [TestBenefit],
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -52,44 +99,45 @@ public struct PsychTest: Codable, Identifiable {
     
     public struct TestQuestion: Codable, Identifiable, QuestionType {
         public let id: UUID
+        public let questionId: Int
         public let question: String
-        public let options: [String]
+        public let options: [QuestionOption]?
         public let correctAnswer: Int?
         public let points: Int
+        public let isRequired: Bool
+        public let questionType: QuestionResponseType
         
         public var questionText: String { question }
-        public var questionType: QuestionResponseType {
-            if options.isEmpty {
-                return .text
-            } else {
-                return .multipleChoice
-            }
-        }
-        public var isRequired: Bool { true }
-        public var questionOptions: [QuestionOption]? {
-            options.enumerated().map { index, text in
-                QuestionOption(
-                    id: index + 1,
-                    questionId: 0,  // Not needed for this implementation
-                    text: text,
-                    value: String(index),
-                    order: index + 1
-                )
-            }
+        
+        private enum CodingKeys: String, CodingKey {
+            case id = "uuid"
+            case questionId = "id"
+            case question = "text"
+            case options
+            case correctAnswer = "correct_answer"
+            case points
+            case isRequired = "required"
+            case questionType = "type"
         }
         
         public init(
             id: UUID = UUID(),
+            questionId: Int,
             question: String,
-            options: [String],
+            options: [QuestionOption]? = nil,
             correctAnswer: Int? = nil,
-            points: Int = 1
+            points: Int = 1,
+            isRequired: Bool = true,
+            questionType: QuestionResponseType = .multipleChoice
         ) {
             self.id = id
+            self.questionId = questionId
             self.question = question
             self.options = options
             self.correctAnswer = correctAnswer
             self.points = points
+            self.isRequired = isRequired
+            self.questionType = questionType
         }
     }
 }
@@ -114,40 +162,34 @@ public enum TestCategory: String, Codable, CaseIterable {
     }
 }
 
+public struct TestBenefit: Codable, Identifiable {
+    public let id: UUID
+    public let title: String
+    public let description: String
+}
+
 public struct TestProgress: Codable, Identifiable {
     public let id: UUID
-    public let userId: UUID
-    public let testId: UUID
     public let status: TestStatus
-    public let currentQuestionIndex: Int
-    public let answers: [String: String]
-    public let score: Int?
     public let lastUpdated: Date
+    public let score: Int?
+    
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case lastUpdated = "last_updated"
+        case score
+    }
     
     public init(
         id: UUID = UUID(),
-        userId: UUID,
-        testId: UUID,
-        status: TestStatus = .notStarted,
-        currentQuestionIndex: Int = 0,
-        answers: [String: String] = [:],
-        score: Int? = nil,
-        lastUpdated: Date = Date()
+        status: TestStatus,
+        lastUpdated: Date = Date(),
+        score: Int? = nil
     ) {
         self.id = id
-        self.userId = userId
-        self.testId = testId
         self.status = status
-        self.currentQuestionIndex = currentQuestionIndex
-        self.answers = answers
-        self.score = score
         self.lastUpdated = lastUpdated
+        self.score = score
     }
-}
-
-public enum TestStatus: String, Codable {
-    case notStarted = "not_started"
-    case inProgress = "in_progress"
-    case completed = "completed"
-    case abandoned = "abandoned"
 }

@@ -20,7 +20,8 @@ class TestListViewModel: ObservableObject {
         
         do {
             print("Fetching tests...")
-            let response: PostgrestResponse<[PsychTest]> = try await supabase.from("psych_tests")
+            let response: PostgrestResponse<[PsychTest]> = try await supabase.database
+                .from("psychtests")
                 .select("""
                     id,
                     title,
@@ -31,12 +32,12 @@ class TestListViewModel: ObservableObject {
                     is_active,
                     created_at,
                     updated_at,
-                    test_progress (
+                    testprogress (
                         status,
                         last_updated,
                         score
                     ),
-                    testquestions (
+                    questions (
                         id,
                         uuid,
                         text,
@@ -44,7 +45,7 @@ class TestListViewModel: ObservableObject {
                         required,
                         options
                     ),
-                    testbenefits (
+                    benefits (
                         id,
                         title,
                         description

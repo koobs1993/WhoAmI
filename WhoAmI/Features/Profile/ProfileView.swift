@@ -7,11 +7,11 @@ import SwiftUI
 import Supabase
 
 struct ProfileView: View {
-    @StateObject private var viewModel: ProfileViewModel
+    @ObservedObject private var viewModel: ProfileViewModel
     @Environment(\.dismiss) private var dismiss
     
     init(supabase: SupabaseClient, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: ProfileViewModel(supabase: supabase, userId: userId))
+        _viewModel = ObservedObject(wrappedValue: ProfileViewModel(supabase: supabase, userId: userId))
     }
     
     var body: some View {
@@ -80,14 +80,12 @@ struct StatsSection: View {
                 .font(.headline)
             
             HStack(spacing: 20) {
-                StatItem(title: "Courses Completed", value: "\(stats.coursesCompleted)")
-                StatItem(title: "Lessons Completed", value: "\(stats.lessonsCompleted)")
-                StatItem(title: "Average Score", value: String(format: "%.1f%%", stats.averageScore))
+                StatItem(title: "Tests", value: "\(stats.testsCompleted)")
+                StatItem(title: "Courses", value: "\(stats.coursesCompleted)")
+                StatItem(title: "Score", value: String(format: "%.1f%%", stats.averageScore))
             }
             
-            if stats.totalTimeSpent > 0 {
-                StatItem(title: "Total Time", value: "\(stats.totalTimeSpent) min")
-            }
+            StatItem(title: "Total Points", value: "\(stats.totalPoints)")
         }
         .padding()
         #if os(iOS)
@@ -147,8 +145,12 @@ struct EditProfileView: View {
                                 updatedProfile.firstName = firstName
                                 updatedProfile.lastName = lastName
                                 updatedProfile.bio = bio
-                                await viewModel.updateProfile(updatedProfile)
-                                dismiss()
+                                do {
+                                    try await viewModel.updateProfile(updatedProfile)
+                                    dismiss()
+                                } catch {
+                                    print("Error updating profile: \(error)")
+                                }
                             }
                         }
                     }
@@ -174,15 +176,20 @@ struct PrivacySettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                if let settings = viewModel.privacySettings {
+                if let settings = viewModel.settings {
                     Section(header: Text("Profile Visibility")) {
                         Toggle("Show Profile", isOn: Binding(
-                            get: { settings.showProfile },
+                            get: { settings.isPublic },
                             set: { newValue in
                                 Task {
                                     var updatedSettings = settings
-                                    updatedSettings.showProfile = newValue
-                                    await viewModel.updatePrivacySettings(updatedSettings)
+                                    updatedSettings.isPublic = newValue
+                                    do {
+                                        try await viewModel.updatePrivacySettings(updatedSettings)
+                                    } catch {
+                                        self.error = error
+                                        self.showingError = true
+                                    }
                                 }
                             }
                         ))
@@ -193,7 +200,12 @@ struct PrivacySettingsView: View {
                                 Task {
                                     var updatedSettings = settings
                                     updatedSettings.showActivity = newValue
-                                    await viewModel.updatePrivacySettings(updatedSettings)
+                                    do {
+                                        try await viewModel.updatePrivacySettings(updatedSettings)
+                                    } catch {
+                                        self.error = error
+                                        self.showingError = true
+                                    }
                                 }
                             }
                         ))
@@ -204,7 +216,12 @@ struct PrivacySettingsView: View {
                                 Task {
                                     var updatedSettings = settings
                                     updatedSettings.showStats = newValue
-                                    await viewModel.updatePrivacySettings(updatedSettings)
+                                    do {
+                                        try await viewModel.updatePrivacySettings(updatedSettings)
+                                    } catch {
+                                        self.error = error
+                                        self.showingError = true
+                                    }
                                 }
                             }
                         ))

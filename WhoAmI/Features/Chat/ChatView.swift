@@ -7,8 +7,12 @@ struct ChatView: View {
     @EnvironmentObject private var authManager: AuthManager
     @Environment(\.dismiss) private var dismiss
     
-    init(chatService: ChatService) {
-        _viewModel = StateObject(wrappedValue: ChatViewModel(chatService: chatService))
+    init(chatService: ChatService, sessionId: UUID = UUID(), userId: UUID) {
+        _viewModel = StateObject(wrappedValue: ChatViewModel(
+            chatService: chatService,
+            sessionId: sessionId,
+            userId: userId
+        ))
     }
     
     var body: some View {
@@ -37,7 +41,7 @@ struct ChatView: View {
                         }
                         .padding()
                     }
-                    .onChange(of: viewModel.messages.count) { newCount in
+                    .onChange(of: viewModel.messages.count) { _ in
                         if let lastMessage = viewModel.messages.last {
                             withAnimation {
                                 proxy.scrollTo(lastMessage.id, anchor: .bottom)
@@ -47,9 +51,12 @@ struct ChatView: View {
                 }
             }
             
-            ChatInputView(message: $viewModel.currentMessage) {
+            ChatInputView(
+                message: $viewModel.currentMessage,
+                isLoading: viewModel.isLoading
+            ) {
                 Task {
-                    await viewModel.sendMessage(viewModel.currentMessage)
+                    await viewModel.sendMessage()
                 }
             }
         }
@@ -63,10 +70,10 @@ struct ChatView: View {
 #Preview {
     if #available(iOS 16.0, macOS 13.0, *) {
         NavigationView {
-            ChatView(chatService: ChatService(
-                supabase: Config.supabaseClient,
-                realtime: Config.supabaseClient.realtime
-            ))
+            ChatView(
+                chatService: ChatService(supabase: Config.supabaseClient),
+                userId: UUID()
+            )
             .environmentObject(AuthManager(supabase: Config.supabaseClient))
         }
     } else {

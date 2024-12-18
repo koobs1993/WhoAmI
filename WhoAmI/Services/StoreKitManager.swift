@@ -11,32 +11,17 @@ enum StoreError: Error {
     case databaseError
 }
 
-class SubscriptionCache: CacheProtocol {
-    private var cache = [String: Any]()
-    private let lock = NSLock()
+struct ProductInfo: Codable {
+    let id: String
+    let price: Decimal
+    let displayName: String
+    let description: String
     
-    public func get<T: Codable>(_ type: T.Type, forKey key: String) -> T? {
-        lock.lock()
-        defer { lock.unlock() }
-        return cache[key] as? T
-    }
-    
-    public func set<T: Codable>(_ value: T, forKey key: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        cache[key] = value
-    }
-    
-    public func remove(forKey key: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        cache.removeValue(forKey: key)
-    }
-    
-    public func clear() {
-        lock.lock()
-        defer { lock.unlock() }
-        cache.removeAll()
+    init(from product: Product) {
+        self.id = product.id
+        self.price = product.price
+        self.displayName = product.displayName
+        self.description = product.description
     }
 }
 
@@ -46,12 +31,12 @@ class StoreKitManager: BaseService {
     @Published private(set) var purchasedSubscriptions: [Product] = []
     @Published var error: Error?
     
-    private let cache = SubscriptionCache()
     private var updateListenerTask: Task<Void, Error>?
+    private var productMap: [String: Product] = [:]
     
     override init(supabase: SupabaseClient) {
         super.init(supabase: supabase)
-        setupCache(cache)
+        setupCache(GenericCache())
         Task {
             await listenForTransactions()
         }
@@ -84,8 +69,21 @@ class StoreKitManager: BaseService {
     }
     
     func fetchSubscriptions() async throws {
+        if let cached: [ProductInfo] = getCachedValue([ProductInfo].self, forKey: "subscription_info") {
+            // Fetch fresh products but use cached info for faster display
+            let products = try await Product.products(for: Set(cached.map { $0.id }))
+            productMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0) })
+            subscriptions = products.sorted { $0.price < $1.price }
+            return
+        }
+        
         let products = try await Product.products(for: ["premium_monthly", "premium_yearly"])
+        productMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0) })
         subscriptions = products.sorted { $0.price < $1.price }
+        
+        // Cache product info
+        let productInfo = products.map { ProductInfo(from: $0) }
+        setCachedValue(productInfo, forKey: "subscription_info")
     }
     
     func purchase(_ product: Product) async throws {
@@ -111,13 +109,21 @@ class StoreKitManager: BaseService {
     }
     
     func refreshPurchasedSubscriptions() async {
+        var purchased: [Product] = []
+        
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             
-            if let subscription = subscriptions.first(where: { $0.id == transaction.productID }) {
-                purchasedSubscriptions.append(subscription)
+            if let product = productMap[transaction.productID] {
+                purchased.append(product)
             }
         }
+        
+        purchasedSubscriptions = purchased
+        
+        // Cache purchased product info
+        let purchasedInfo = purchased.map { ProductInfo(from: $0) }
+        setCachedValue(purchasedInfo, forKey: "purchased_subscription_info")
     }
     
     deinit {

@@ -12,9 +12,9 @@ struct ProfileStatsView: View {
     
     var body: some View {
         HStack(spacing: 20) {
-            ProfileStatItem(title: "Tests", value: "\(stats.completedTests)")
+            ProfileStatItem(title: "Tests", value: "\(stats.testsCompleted)")
             ProfileStatItem(title: "Courses", value: "\(stats.coursesCompleted)")
-            ProfileStatItem(title: "Streak", value: "\(stats.streak)")
+            ProfileStatItem(title: "Score", value: String(format: "%.1f%%", stats.averageScore))
         }
         .padding()
         #if os(iOS)
@@ -31,9 +31,9 @@ struct StatsView: View {
     
     var body: some View {
         HStack(spacing: 20) {
-            StatItemView(title: "Tests", value: "\(stats.completedTests)", icon: "checklist")
+            StatItemView(title: "Tests", value: "\(stats.testsCompleted)", icon: "checklist")
             StatItemView(title: "Courses", value: "\(stats.coursesCompleted)", icon: "book.fill")
-            StatItemView(title: "Streak", value: "\(stats.streak)", icon: "flame.fill")
+            StatItemView(title: "Points", value: "\(stats.totalPoints)", icon: "star.fill")
         }
         .padding()
     }

@@ -114,7 +114,7 @@ class AuthManager: ObservableObject {
             throw AuthModels.AuthError.userNotFound
         }
         
-        try await supabase.from("profiles")
+        try await supabase.database.from("profiles")
             .upsert([
                 "id": userId.uuidString,
                 "first_name": data.firstName,

@@ -20,7 +20,7 @@ struct MainTabView: View {
                 
                 // Courses Tab
                 NavigationView {
-                    CourseListView(supabase: authManager.supabase, userId: userId)
+                    CourseListView(supabase: authManager.supabase)
                 }
                 .tabItem {
                     Label("Courses", systemImage: "book.fill")
@@ -39,10 +39,10 @@ struct MainTabView: View {
                 // Chat Tab
                 if #available(macOS 13.0, *) {
                     NavigationView {
-                        ChatView(chatService: ChatService(
-                            supabase: authManager.supabase,
-                            realtime: authManager.supabase.realtime
-                        ))
+                        ChatView(
+                            chatService: ChatService(supabase: authManager.supabase),
+                            userId: userId
+                        )
                     }
                     .tabItem {
                         Label("Chat", systemImage: "message.fill")

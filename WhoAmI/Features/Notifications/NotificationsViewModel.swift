@@ -62,7 +62,13 @@ class NotificationsViewModel: ObservableObject {
     init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
         self.userId = userId
-        self.deviceSettings = UserDeviceSettings()
+        self.deviceSettings = UserDeviceSettings(
+            userId: userId,
+            notificationsEnabled: true,
+            courseUpdatesEnabled: true,
+            testRemindersEnabled: true,
+            weeklySummariesEnabled: true
+        )
     }
     
     func loadSettings() async {

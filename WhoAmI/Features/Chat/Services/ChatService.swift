@@ -1,108 +1,108 @@
 import Foundation
 import Supabase
 
-class ChatService: BaseService {
-    private let realtime: RealtimeClient
+public class ChatService {
+    public let supabase: SupabaseClient
+    private let openAIService: OpenAIService
+    private var channel: RealtimeChannel?
+    private var messageHandler: ((ChatMessage) -> Void)?
     
-    init(supabase: SupabaseClient, realtime: RealtimeClient) {
-        self.realtime = realtime
-        super.init(supabase: supabase)
+    public init(supabase: SupabaseClient) {
+        self.supabase = supabase
+        self.openAIService = OpenAIService()
     }
     
-    func subscribe(_ channelName: String, onMessage: @escaping (ChatMessage) -> Void) -> RealtimeChannel {
-        let channel = realtime.channel(channelName)
-        
-        // Configure channel with proper authentication
-        channel.on("*", filter: .init()) { error in
-            print("Channel error: \(error)")
-        }
-        
-        channel.on("presence", filter: .init()) { _ in
-            print("Channel closed")
-        }
-        
-        channel.on("broadcast", filter: .init()) { _ in
-            print("Joined channel: \(channelName)")
-        }
-        
-        // Subscribe to Postgres changes
-        channel.on(
-            "postgres_changes",
-            filter: .init(
-                event: "*",
-                schema: "public",
-                table: "chat_messages"
-            )
-        ) { message in
-            print("Received message: \(message)")
-            
-            do {
+    public func connect() async throws {
+        channel = supabase.realtime
+            .channel("chat")
+            .on("INSERT", filter: ChannelFilter(event: "chatmessages", schema: "public")) { [weak self] message in
                 let payload = message.payload
-                let data = try JSONSerialization.data(withJSONObject: payload)
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                
-                let chatMessage = try decoder.decode(ChatMessage.self, from: data)
-                Task { @MainActor in
-                    onMessage(chatMessage)
+                if let data = try? JSONSerialization.data(withJSONObject: payload),
+                   let chatMessage = try? JSONDecoder().decode(ChatMessage.self, from: data) {
+                    self?.messageHandler?(chatMessage)
                 }
-            } catch {
-                print("Failed to decode message: \(error)")
-                print("Raw payload: \(message.payload)")
             }
-        }
         
-        Task {
-            do {
-                // Ensure we have a valid session
-                let session = try await supabase.auth.session
-                print("Subscribing to channel with authenticated session")
-                channel.subscribe()
-            } catch {
-                print("Failed to get session for channel subscription: \(error)")
-            }
+        if let channel = channel {
+            try await channel.subscribe()
+        } else {
+            throw ChatError.channelInitializationFailed
         }
-        
-        return channel
     }
     
-    func unsubscribe(_ channel: RealtimeChannel) {
-        print("Unsubscribing from channel")
-        channel.unsubscribe()
+    public func subscribe(onMessage: @escaping (ChatMessage) -> Void) {
+        self.messageHandler = onMessage
     }
     
-    func fetchMessages(limit: Int = 50, offset: Int = 0) async throws -> [ChatMessage] {
-        print("Fetching messages with limit: \(limit), offset: \(offset)")
-        let response: PostgrestResponse<[ChatMessage]> = try await supabase
-            .from("chat_messages")
-            .select()
-            .order("created_at", ascending: false)
-            .limit(limit)
-            .range(from: offset, to: offset + limit - 1)
+    public func sendMessage(_ content: String, sessionId: UUID, userId: UUID) async throws {
+        // Save user message
+        let userMessage = ChatMessage(
+            sessionId: sessionId,
+            content: content,
+            role: .user,
+            userId: userId
+        )
+        
+        try await supabase.database
+            .from("chatmessages")
+            .insert(userMessage)
             .execute()
         
-        print("Fetched \(response.value.count) messages")
+        // Get AI response
+        let systemPrompt = """
+        You are a psychology-focused AI assistant. Your responses should be empathetic, \
+        thoughtful, and based on psychological principles. Engage with users in a warm, \
+        conversational manner while maintaining professional boundaries. Draw from various \
+        psychological theories and therapeutic approaches when appropriate, but communicate \
+        in an accessible way. Remember to:
+        1. Show empathy and active listening
+        2. Ask clarifying questions when needed
+        3. Provide insights based on psychological concepts
+        4. Maintain a supportive and non-judgmental tone
+        5. Encourage self-reflection and growth
+        Note: Always clarify that you are an AI assistant and not a replacement for \
+        professional mental health care when discussing sensitive topics.
+        """
+        
+        let messages = try await fetchMessages(sessionId: sessionId)
+        let aiResponse = try await openAIService.generateResponse(
+            userMessage: content,
+            chatHistory: messages,
+            systemPrompt: systemPrompt
+        )
+        
+        // Save AI response
+        let aiMessage = ChatMessage(
+            sessionId: sessionId,
+            content: aiResponse,
+            role: .assistant,
+            userId: nil
+        )
+        
+        try await supabase.database
+            .from("chatmessages")
+            .insert(aiMessage)
+            .execute()
+    }
+    
+    public func disconnect() {
+        channel?.unsubscribe()
+        channel = nil
+        messageHandler = nil
+    }
+    
+    public func fetchMessages(sessionId: UUID) async throws -> [ChatMessage] {
+        let response: PostgrestResponse<[ChatMessage]> = try await supabase.database
+            .from("chatmessages")
+            .select()
+            .eq("session_id", value: sessionId.uuidString)
+            .order("created_at")
+            .execute()
+        
         return response.value
     }
-    
-    func sendMessage(_ message: ChatMessage) async throws {
-        print("Sending message: \(message)")
-        try await supabase
-            .from("chat_messages")
-            .insert([
-                "session_id": message.sessionId.uuidString,
-                "content": message.content,
-                "role": message.role.rawValue,
-                "user_id": message.userId?.uuidString ?? "",
-                "created_at": formatDate(message.createdAt ?? Date())
-            ])
-            .execute()
-        print("Message sent successfully")
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
+}
+
+enum ChatError: Error {
+    case channelInitializationFailed
 }

@@ -66,6 +66,19 @@ private struct InfoCardContainer: View {
                     title: "Description",
                     description: test.shortDescription
                 )
+                
+                if !test.benefits.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Benefits")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        ForEach(test.benefits) { benefit in
+                            Text("• \(benefit.title)")
+                                .font(.body)
+                        }
+                    }
+                }
             }
             .padding()
             .frame(maxWidth: .infinity)
@@ -114,34 +127,32 @@ private struct InfoRow: View {
 }
 
 struct TestDetailView_Previews: PreviewProvider {
-    static let testData = PsychTest(
-        id: UUID(),
-        title: "Sample Test",
-        description: "A sample test description",
-        shortDescription: "Short description",
-        category: .personality,
-        imageUrl: nil,
-        duration: 30,
-        durationMinutes: 30,
-        isActive: true,
-        questions: [
-            PsychTest.TestQuestion(
-                id: UUID(),
-                question: "Sample Question",
-                options: ["Option 1", "Option 2"],
-                correctAnswer: 0,
-                points: 1
-            )
-        ],
-        userProgress: nil,
-        benefits: ["Benefit 1", "Benefit 2"],
-        createdAt: Date(),
-        updatedAt: Date()
-    )
-    
     static var previews: some View {
         NavigationView {
-            TestDetailView(test: testData)
+            TestDetailView(test: PsychTest(
+                title: "Sample Test",
+                description: "A sample test description",
+                shortDescription: "Short description",
+                category: .personality,
+                imageUrl: nil,
+                duration: 1800, // 30 minutes in seconds
+                durationMinutes: 30,
+                isActive: true,
+                questions: [
+                    PsychTest.TestQuestion(
+                        questionId: 1,
+                        question: "Sample Question",
+                        options: [
+                            QuestionOption(text: "Option 1", value: 1),
+                            QuestionOption(text: "Option 2", value: 2)
+                        ]
+                    )
+                ],
+                benefits: [
+                    TestBenefit(id: UUID(), title: "Benefit 1", description: "Description 1"),
+                    TestBenefit(id: UUID(), title: "Benefit 2", description: "Description 2")
+                ]
+            ))
         }
     }
 }
