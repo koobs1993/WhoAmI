@@ -1,55 +1,71 @@
 import SwiftUI
-import PhotosUI
+
 #if os(iOS)
 import UIKit
 
-struct SharedImagePicker: UIViewControllerRepresentable {
-    @Binding var image: PlatformImage?
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    @Environment(\.dismiss) private var dismiss
     
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var config = PHPickerConfiguration()
-        config.filter = .images
-        config.selectionLimit = 1
-        
-        let picker = PHPickerViewController(configuration: config)
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
         picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
         return picker
     }
     
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let parent: SharedImagePicker
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePicker
         
-        init(_ parent: SharedImagePicker) {
+        init(_ parent: ImagePicker) {
             self.parent = parent
         }
         
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true)
-            
-            guard let provider = results.first?.itemProvider else { return }
-            
-            if provider.canLoadObject(ofClass: PlatformImage.self) {
-                provider.loadObject(ofClass: PlatformImage.self) { image, _ in
-                    DispatchQueue.main.async {
-                        self.parent.image = image as? PlatformImage
-                    }
-                }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.image = image
             }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }
-#else
-struct SharedImagePicker: View {
-    @Binding var image: PlatformImage?
+
+#elseif os(macOS)
+import AppKit
+
+struct ImagePicker: View {
+    @Binding var image: NSImage?
+    @Environment(\.dismiss) private var dismiss
+    @State private var isShowingFileImporter = false
     
     var body: some View {
-        Text("Image picker not available on macOS")
+        Button("Choose Image") {
+            isShowingFileImporter = true
+        }
+        .fileImporter(
+            isPresented: $isShowingFileImporter,
+            allowedContentTypes: [.image]
+        ) { result in
+            switch result {
+            case .success(let url):
+                if let image = NSImage(contentsOf: url) {
+                    self.image = image
+                }
+            case .failure(let error):
+                print("Error selecting image: \(error.localizedDescription)")
+            }
+            dismiss()
+        }
     }
 }
-#endif 
+#endif

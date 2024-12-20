@@ -1,3 +1,5 @@
+ // Chat UI Components temporarily disabled
+/*
 import SwiftUI
 
 struct MessageInputView: View {
@@ -25,4 +27,5 @@ struct MessageInputView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .shadow(radius: 2)
     }
-} 
+}
+*/

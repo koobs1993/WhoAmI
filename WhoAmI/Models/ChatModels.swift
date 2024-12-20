@@ -1,3 +1,5 @@
+// Chat models temporarily disabled
+/*
 import Foundation
 
 public struct ChatMessage: Codable, Identifiable {
@@ -73,3 +75,4 @@ public struct ChatSession: Codable, Identifiable {
         case updatedAt = "updated_at"
     }
 }
+*/

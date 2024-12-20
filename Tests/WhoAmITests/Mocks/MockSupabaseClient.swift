@@ -109,7 +109,7 @@ class MockPostgrestQueryBuilder: PostgrestQueryBuilder {
         super.init()
     }
     
-    override func execute<T>() async throws -> PostgrestResponse<T> where T : Decodable {
+    override func execute<T>() async throws -> PostgrestResponse<T, [String: AnyObject]> where T : Decodable {
         if let error = mockError {
             throw error
         }

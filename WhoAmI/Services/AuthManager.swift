@@ -1,12 +1,14 @@
 import Foundation
 import Supabase
+import Auth
+import GoTrue
 
 @MainActor
 class AuthManager: ObservableObject {
     let supabase: SupabaseClient
     
     @Published var isAuthenticated = false
-    @Published var currentUser: User?
+    @Published var currentUser: UserProfile?
     @Published var isLoading = false
     
     var client: SupabaseClient {
@@ -24,105 +26,93 @@ class AuthManager: ObservableObject {
         }
     }
     
+    private func withRetry<T>(maxAttempts: Int = 3, operation: () async throws -> T) async throws -> T {
+        var lastError: Error?
+        
+        for attempt in 1...maxAttempts {
+            do {
+                return try await operation()
+            } catch {
+                lastError = error
+                if attempt < maxAttempts {
+                    // Exponential backoff: wait longer between each retry
+                    try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
+                }
+            }
+        }
+        
+        throw lastError ?? AuthModels.AuthError.unknown
+    }
+    
     func signUp(data: AuthModels.BasicSignUpData) async throws {
         isLoading = true
         defer { isLoading = false }
         
         do {
-            let authResponse = try await supabase.auth.signUp(
-                email: data.email,
-                password: data.password,
-                data: ["email_confirm": false]  // Disable email confirmation
-            )
+            let response = try await withRetry {
+                try await supabase.auth.signUp(
+                    email: data.email,
+                    password: data.password,
+                    data: nil
+                )
+            }
             
-            self.currentUser = authResponse.user
-            self.isAuthenticated = true
+            if let user = response.session?.user,
+               let userId = UUID(uuidString: user.id) {
+                self.currentUser = UserProfile(
+                    id: userId,
+                    firstName: user.userMetadata["first_name"] as? String ?? "",
+                    lastName: user.userMetadata["last_name"] as? String ?? "",
+                    email: user.email ?? "",
+                    avatarUrl: nil,
+                    bio: nil,
+                    settings: nil,
+                    stats: nil,
+                    subscription: nil,
+                    devices: nil,
+                    createdAt: user.createdAt ?? Date(),
+                    updatedAt: user.updatedAt ?? Date()
+                )
+                self.isAuthenticated = true
+            } else {
+                throw AuthModels.AuthError.signUpFailed("Failed to create user account")
+            }
             
         } catch let error as AuthModels.AuthError {
             throw error
+        } catch let error as URLError where error.code == .timedOut {
+            throw AuthModels.AuthError.signUpFailed("Request timed out. Please check your internet connection and try again.")
         } catch {
             throw AuthModels.AuthError.signUpFailed(error.localizedDescription)
         }
     }
     
-    func signIn(email: String, password: String) async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
+    private func checkSession() async {
         do {
-            let authResponse = try await supabase.auth.signIn(
-                email: email,
-                password: password
-            )
-            
-            self.currentUser = authResponse.user
-            self.isAuthenticated = true
-            
-        } catch {
-            throw AuthModels.AuthError.signInFailed(error.localizedDescription)
-        }
-    }
-    
-    func signOut() async throws {
-        do {
-            try await supabase.auth.signOut()
-            self.currentUser = nil
-            self.isAuthenticated = false
-        } catch {
-            throw AuthModels.AuthError.signOutFailed(error.localizedDescription)
-        }
-    }
-    
-    func refreshSession() async {
-        do {
-            let session = try await supabase.auth.session
-            self.currentUser = session.user
-            self.isAuthenticated = self.currentUser != nil
-        } catch {
-            self.currentUser = nil
-            self.isAuthenticated = false
-            print("Failed to refresh session: \(error)")
-        }
-    }
-    
-    func resetPassword(email: String) async throws {
-        do {
-            try await supabase.auth.resetPasswordForEmail(email)
-        } catch {
-            throw AuthModels.AuthError.signInFailed("Failed to send password reset email")
-        }
-    }
-    
-    func updatePassword(newPassword: String) async throws {
-        try await supabase.auth.update(user: UserAttributes(password: newPassword))
-    }
-    
-    func checkSession() async {
-        do {
-            let session = try await supabase.auth.session
-            self.currentUser = session.user
-            self.isAuthenticated = true
+            if let session = try await supabase.auth.session,
+               let userId = UUID(uuidString: session.user.id) {
+                self.currentUser = UserProfile(
+                    id: userId,
+                    firstName: session.user.userMetadata["first_name"] as? String ?? "",
+                    lastName: session.user.userMetadata["last_name"] as? String ?? "",
+                    email: session.user.email ?? "",
+                    avatarUrl: nil,
+                    bio: nil,
+                    settings: nil,
+                    stats: nil,
+                    subscription: nil,
+                    devices: nil,
+                    createdAt: session.user.createdAt ?? Date(),
+                    updatedAt: session.user.updatedAt ?? Date()
+                )
+                self.isAuthenticated = true
+            } else {
+                self.currentUser = nil
+                self.isAuthenticated = false
+            }
         } catch {
             self.currentUser = nil
             self.isAuthenticated = false
         }
-    }
-    
-    // Method to update user profile after basic signup
-    func updateProfile(data: AuthModels.SignUpData) async throws {
-        guard let userId = currentUserId else {
-            throw AuthModels.AuthError.userNotFound
-        }
-        
-        try await supabase.database.from("profiles")
-            .upsert([
-                "id": userId.uuidString,
-                "first_name": data.firstName,
-                "last_name": data.lastName,
-                "gender": data.gender.rawValue,
-                "role": data.role.rawValue,
-                "updated_at": ISO8601DateFormatter().string(from: Date())
-            ])
-            .execute()
     }
 }

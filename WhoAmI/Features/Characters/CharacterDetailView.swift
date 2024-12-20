@@ -4,7 +4,7 @@ import Supabase
 struct CharacterDetailView: View {
     @StateObject private var viewModel: CharacterDetailViewModel
     
-    init(supabase: SupabaseClient, characterId: UUID) {
+    init(supabase: SupabaseClient, characterId: Int) {
         _viewModel = StateObject(wrappedValue: CharacterDetailViewModel(
             supabase: supabase,
             characterId: characterId
@@ -113,7 +113,7 @@ struct CharacterProblemCard: View {
     NavigationView {
         CharacterDetailView(
             supabase: Config.supabaseClient,
-            characterId: UUID()
+            characterId: 1 // Preview with first character
         )
     }
 }

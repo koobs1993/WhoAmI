@@ -1,0 +1,8 @@
+// This is a placeholder. You'll need to create actual icon files with appropriate sizes and add them to your project.
+// For now, you can use a temporary icon or create one using an icon generator tool.
+// Required sizes for iOS:
+// - iPhone: 20pt@2x,3x, 29pt@2x,3x, 40pt@2x,3x, 60pt@2x,3x
+// - iPad: 20pt@1x,2x, 29pt@1x,2x, 40pt@1x,2x, 76pt@1x,2x, 83.5pt@2x
+// - App Store: 1024pt@1x
+// Required sizes for macOS:
+// - 16pt@1x,2x, 32pt@1x,2x, 128pt@1x,2x, 256pt@1x,2x, 512pt@1x,2x 

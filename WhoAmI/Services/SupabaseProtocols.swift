@@ -1,29 +1,20 @@
 import Foundation
 import Supabase
+import Realtime
 
 protocol SupabaseProtocol {
-    var database: PostgrestClient { get }
-    var realtime: RealtimeClient { get }
-    func updateChatSession(_ session: ChatSession) async throws
+    var realtimeV2: RealtimeClientV2 { get }
+    // Chat methods temporarily disabled
+    /*
     func saveChatMessage(_ message: WhoAmI.ChatMessage) async throws
-    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannel?
+    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannelV2?
+    */
     func updateProfile(_ profile: UserProfile) async throws
 }
 
 extension SupabaseClient: SupabaseProtocol {
-    func updateChatSession(_ session: ChatSession) async throws {
-        let update = [
-            "title": session.title,
-            "updated_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
-        try await database
-            .from("chat_sessions")
-            .update(update)
-            .eq("id", value: session.id.uuidString)
-            .execute()
-    }
-    
+    // Chat methods temporarily disabled
+    /*
     func saveChatMessage(_ message: WhoAmI.ChatMessage) async throws {
         struct ChatMessageRecord: Codable {
             let sessionId: UUID
@@ -43,27 +34,34 @@ extension SupabaseClient: SupabaseProtocol {
         
         let record = ChatMessageRecord(from: message)
         
-        try await database
-            .from("chat_messages")
+        try await from("chat_messages")
             .insert(record)
             .execute()
     }
     
-    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannel? {
-        let channel = realtime.channel("chat_messages:\(sessionId.uuidString)")
+    func subscribeToMessages(sessionId: UUID, onMessage: @escaping (WhoAmI.ChatMessage) -> Void) async -> RealtimeChannelV2? {
+        let channel = realtimeV2.channel("realtime:public:chat_messages")
         
-        channel.on("postgres_changes", filter: .init(event: "*", schema: "public", table: "chat_messages")) { message in
-            let payload = message.payload
-            guard let data = try? JSONSerialization.data(withJSONObject: payload),
+        // Set up notification observer
+        NotificationCenter.default.addObserver(forName: Notification.Name("RealtimeMessage"), object: nil, queue: .main) { notification in
+            guard let message = notification.object as? RealtimeMessageV2,
+                  let record = message.payload["record"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: record),
                   let chatMessage = try? JSONDecoder().decode(WhoAmI.ChatMessage.self, from: data) else {
                 return
             }
             onMessage(chatMessage)
         }
         
-        channel.subscribe()
-        return channel
+        do {
+            await channel.subscribe()
+            return channel
+        } catch {
+            print("Failed to subscribe to chat messages: \(error)")
+            return nil
+        }
     }
+    */
     
     func updateProfile(_ profile: UserProfile) async throws {
         struct ProfileUpdate: Codable {
@@ -84,10 +82,9 @@ extension SupabaseClient: SupabaseProtocol {
         
         let update = ProfileUpdate(from: profile)
         
-        try await database
-            .from("profiles")
+        try await from("profiles")
             .update(update)
             .eq("id", value: profile.id.uuidString)
             .execute()
     }
-} 
+}

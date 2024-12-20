@@ -1,6 +1,7 @@
-import SwiftUI
-import Supabase
+// import SwiftUI
+// import Supabase
 
+/*
 @MainActor
 class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
@@ -9,12 +10,12 @@ class ChatViewModel: ObservableObject {
     @Published var error: Error?
     
     private let chatService: ChatService
-    private let sessionId: UUID
+    private var sessionId: UUID?
     private let userId: UUID
+    private var isFirstLoad = true
     
-    init(chatService: ChatService, sessionId: UUID = UUID(), userId: UUID) {
+    init(chatService: ChatService, userId: UUID) {
         self.chatService = chatService
-        self.sessionId = sessionId
         self.userId = userId
         print("ChatViewModel initialized")
         Task {
@@ -22,18 +23,47 @@ class ChatViewModel: ObservableObject {
         }
     }
     
-    private func setupChat() async {
-        await fetchMessages()
-        await setupRealtimeSubscription()
+    func setupChat() async {
+        guard !isLoading else { return }
+        isLoading = true
+        
+        do {
+            // Create or fetch session
+            if sessionId == nil {
+                let session = try await chatService.createSession(userId: userId)
+                sessionId = session.id
+                print("Created new chat session: \(session.id)")
+            }
+            
+            guard let sessionId = sessionId else {
+                throw ChatError.sessionNotFound
+            }
+            
+            await fetchMessages(sessionId: sessionId)
+            
+            if isFirstLoad {
+                await setupRealtimeSubscription()
+                isFirstLoad = false
+            }
+            
+            error = nil
+        } catch {
+            print("Error setting up chat: \(error)")
+            self.error = error
+        }
+        
+        isLoading = false
     }
     
     private func setupRealtimeSubscription() async {
         do {
             chatService.subscribe { [weak self] message in
                 guard let self = self else { return }
-                self.messages.append(message)
-                // Sort messages by timestamp
-                self.messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+                withAnimation(.spring(response: 0.3)) {
+                    self.messages.append(message)
+                    // Sort messages by timestamp
+                    self.messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+                }
             }
             
             try await chatService.connect()
@@ -45,44 +75,78 @@ class ChatViewModel: ObservableObject {
     }
     
     func sendMessage() async {
-        guard !currentMessage.isEmpty else { return }
-        let messageToSend = currentMessage
+        guard !currentMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let sessionId = sessionId else { return }
+        
+        let messageToSend = currentMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         currentMessage = ""
         isLoading = true
         
         do {
             try await chatService.sendMessage(messageToSend, sessionId: sessionId, userId: userId)
             print("Message sent successfully")
+            error = nil
         } catch {
             print("Error sending message: \(error)")
             self.error = error
             // Restore the message if sending failed
             currentMessage = messageToSend
+            
+            // Show error briefly then clear it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                withAnimation {
+                    self?.error = nil
+                }
+            }
         }
         
         isLoading = false
     }
     
-    private func fetchMessages() async {
-        isLoading = true
+    private func fetchMessages(sessionId: UUID) async {
         do {
-            messages = try await chatService.fetchMessages(sessionId: sessionId)
-            messages.sort { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+            let fetchedMessages = try await chatService.fetchMessages(sessionId: sessionId)
+            withAnimation(.spring(response: 0.3)) {
+                messages = fetchedMessages.sorted { ($0.createdAt ?? Date()) < ($1.createdAt ?? Date()) }
+            }
             print("Fetched \(messages.count) messages")
+            error = nil
         } catch {
             print("Error fetching messages: \(error)")
             self.error = error
         }
+    }
+    
+    func clearChat() async {
+        guard let sessionId = sessionId else { return }
+        isLoading = true
+        
+        do {
+            try await chatService.clearMessages(sessionId: sessionId)
+            withAnimation(.spring(response: 0.3)) {
+                messages = []
+            }
+            error = nil
+        } catch {
+            print("Error clearing chat: \(error)")
+            self.error = error
+            
+            // Show error briefly then clear it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                withAnimation {
+                    self?.error = nil
+                }
+            }
+        }
+        
         isLoading = false
     }
     
-    func retryFetch() async {
-        error = nil
-        await setupChat()
-    }
-    
     deinit {
-        chatService.disconnect()
+        Task {
+            await chatService.disconnect()
+        }
         print("ChatViewModel deinitialized")
     }
 }
+*/

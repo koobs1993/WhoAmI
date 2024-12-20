@@ -3,104 +3,122 @@ import Supabase
 
 @MainActor
 class AuthViewModel: ObservableObject {
-    @Published var email = ""
-    @Published var password = ""
-    @Published var errorMessage = ""
-    @Published var isLoading = false
-    
     private let authManager: AuthManager
     
+    @Published var isAuthenticated = false
+    @Published var isLoading = false
+    @Published var errorMessage = ""
+    @Published var name = ""
+    @Published var email = ""
+    @Published var password = ""
+    @Published var confirmPassword = ""
+    
     init(supabase: SupabaseClient) {
-        // Use the shared AuthManager instance from ContentView
         self.authManager = AuthManager(supabase: supabase)
+        Task {
+            await checkSession()
+        }
     }
     
-    private func validateInput() -> Bool {
+    private func checkSession() async {
+        await authManager.checkSession()
+        isAuthenticated = authManager.isAuthenticated
+    }
+    
+    func signIn() async throws {
         guard !email.isEmpty else {
             errorMessage = "Please enter your email"
-            return false
+            return
         }
+        
         guard !password.isEmpty else {
             errorMessage = "Please enter your password"
-            return false
+            return
         }
-        
-        // Basic email format validation
-        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
-        let emailPredicate = NSPredicate(format:"SELF MATCHES %@", emailRegex)
-        guard emailPredicate.evaluate(with: email) else {
-            errorMessage = "Please enter a valid email address"
-            return false
-        }
-        
-        // Basic password strength validation
-        guard password.count >= 6 else {
-            errorMessage = "Password must be at least 6 characters"
-            return false
-        }
-        
-        return true
-    }
-    
-    func signIn() async {
-        guard validateInput() else { return }
         
         isLoading = true
         errorMessage = ""
         
         do {
             try await authManager.signIn(email: email, password: password)
-        } catch let error as AuthModels.AuthError {
-            errorMessage = error.errorDescription ?? "Sign in failed"
+            isAuthenticated = true
+            clearFields()
+        } catch let error as URLError where error.code == .timedOut {
+            errorMessage = "Connection timed out. Please check your internet connection and try again."
         } catch {
-            errorMessage = "An unexpected error occurred"
+            handleError(error)
         }
         
         isLoading = false
     }
     
-    func signUp() async {
-        guard validateInput() else { return }
-        
-        isLoading = true
-        errorMessage = ""
-        
-        do {
-            let signUpData = AuthModels.BasicSignUpData(
-                email: email,
-                password: password
-            )
-            
-            try await authManager.signUp(data: signUpData)
-        } catch let error as AuthModels.AuthError {
-            errorMessage = error.errorDescription ?? "Sign up failed"
-        } catch {
-            errorMessage = "An unexpected error occurred"
+    func signUp() async throws {
+        // Validate input fields
+        guard !name.isEmpty else {
+            errorMessage = "Please enter your name"
+            return
         }
         
-        isLoading = false
-    }
-    
-    func signOut() async {
-        do {
-            try await authManager.signOut()
-        } catch {
-            errorMessage = "Failed to sign out"
-        }
-    }
-    
-    func sendPasswordReset(email: String) async {
         guard !email.isEmpty else {
             errorMessage = "Please enter your email"
             return
         }
         
-        // Validate email format
-        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
-        let emailPredicate = NSPredicate(format:"SELF MATCHES %@", emailRegex)
-        guard emailPredicate.evaluate(with: email) else {
+        guard isValidEmail(email) else {
             errorMessage = "Please enter a valid email address"
             return
+        }
+        
+        guard !password.isEmpty else {
+            errorMessage = "Please enter a password"
+            return
+        }
+        
+        guard password.count >= 8 else {
+            errorMessage = "Password must be at least 8 characters"
+            return
+        }
+        
+        guard password == confirmPassword else {
+            errorMessage = "Passwords do not match"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = ""
+        
+        do {
+            // Create user account
+            try await authManager.signUp(data: .init(email: email, password: password))
+            
+            // Update profile with additional info
+            try await authManager.updateProfile(data: .init(
+                email: email,
+                password: password,
+                firstName: name.components(separatedBy: " ").first ?? name,
+                lastName: name.components(separatedBy: " ").dropFirst().joined(separator: " "),
+                gender: .notSpecified,
+                role: .student
+            ))
+            
+            isAuthenticated = true
+            clearFields()
+        } catch let error as URLError where error.code == .timedOut {
+            errorMessage = "Connection timed out. Please check your internet connection and try again."
+        } catch {
+            handleError(error)
+        }
+        
+        isLoading = false
+    }
+    
+    func resetPassword(email: String) async throws {
+        guard !email.isEmpty else {
+            throw AuthError.invalidEmail
+        }
+        
+        guard isValidEmail(email) else {
+            throw AuthError.invalidEmail
         }
         
         isLoading = true
@@ -108,19 +126,44 @@ class AuthViewModel: ObservableObject {
         
         do {
             try await authManager.resetPassword(email: email)
-            errorMessage = "Password reset email sent"
         } catch {
-            errorMessage = "Failed to send password reset email"
+            handleError(error)
+            throw error
         }
         
         isLoading = false
     }
     
-    // Clear form data and error messages
-    func reset() {
+    func signOut() async {
+        isLoading = true
+        do {
+            try await authManager.signOut()
+            isAuthenticated = false
+        } catch {
+            handleError(error)
+        }
+        isLoading = false
+    }
+    
+    func clearFields() {
+        name = ""
         email = ""
         password = ""
+        confirmPassword = ""
         errorMessage = ""
-        isLoading = false
+    }
+    
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegEx = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPred = NSPredicate(format:"SELF MATCHES %@", emailRegEx)
+        return emailPred.evaluate(with: email)
+    }
+    
+    private func handleError(_ error: Error) {
+        if let authError = error as? AuthError {
+            errorMessage = authError.localizedDescription
+        } else {
+            errorMessage = error.localizedDescription
+        }
     }
 }

@@ -11,13 +11,21 @@ struct EnrolledCourseResponse: Codable {
 
 @MainActor
 class CourseViewModel: ObservableObject {
-    private let supabase: SupabaseClient
-    private let userId: UUID
+    let supabase: SupabaseClient
+    let userId: UUID
     
     @Published var courses: [Course] = []
     @Published var enrolledCourses: [EnrolledCourseResponse] = []
     @Published var isLoading = false
     @Published var error: Error?
+    
+    var categories: [String] {
+        Array(Set(courses.map { $0.category })).sorted()
+    }
+    
+    var difficulties: [String] {
+        Array(Set(courses.map { $0.difficulty })).sorted()
+    }
     
     init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
@@ -28,44 +36,47 @@ class CourseViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        let query = try await supabase.database
+        // Fetch all courses
+        let coursesQuery = supabase
+            .from("courses")
+            .select("""
+                course_id,
+                title,
+                description,
+                image_url,
+                difficulty,
+                category,
+                estimated_duration,
+                lessons (
+                    id,
+                    course_id,
+                    title,
+                    description,
+                    duration,
+                    order,
+                    content,
+                    created_at,
+                    updated_at
+                ),
+                created_at,
+                updated_at
+            """)
+        
+        let coursesResponse: PostgrestResponse<[Course]> = try await coursesQuery.execute()
+        courses = coursesResponse.value
+        
+        // Fetch enrolled courses for the current user
+        let enrolledQuery = supabase
             .from("user_courses")
             .select()
             .eq("user_id", value: userId.uuidString)
         
-        let response: PostgrestResponse<[EnrolledCourseResponse]> = try await query.execute()
-        enrolledCourses = response.value
-        
-        // Fetch full course details
-        if !enrolledCourses.isEmpty {
-            let courseIds = enrolledCourses.map { $0.courseId.uuidString }
-            let coursesQuery = try await supabase.database
-                .from("courses")
-                .select("""
-                    id,
-                    title,
-                    description,
-                    image_url,
-                    difficulty,
-                    category,
-                    estimated_duration,
-                    lessons (
-                        id,
-                        title,
-                        description,
-                        duration,
-                        order,
-                        content
-                    ),
-                    created_at,
-                    updated_at
-                """)
-                .eq("id", value: courseIds[0]) // Temporary solution: fetch first course
-                // TODO: Implement proper IN query when available
-            
-            let coursesResponse: PostgrestResponse<[Course]> = try await coursesQuery.execute()
-            courses = coursesResponse.value
-        }
+        let enrolledResponse: PostgrestResponse<[EnrolledCourseResponse]> = try await enrolledQuery.execute()
+        enrolledCourses = enrolledResponse.value
+    }
+    
+    func isEnrolled(in courseId: UUID) -> Bool {
+        enrolledCourses.contains { $0.courseId == courseId }
     }
     
     func enroll(in courseId: UUID) async throws {
@@ -76,7 +87,7 @@ class CourseViewModel: ObservableObject {
             completedAt: nil
         )
         
-        try await supabase.database
+        try await supabase
             .from("user_courses")
             .insert([
                 "course_id": enrollment.courseId.uuidString,

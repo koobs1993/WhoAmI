@@ -1,56 +1,46 @@
 import SwiftUI
-import Supabase
 
 struct OnboardingView: View {
-    @StateObject private var viewModel: OnboardingViewModel
-    
-    init(supabase: SupabaseClient) {
-        _viewModel = StateObject(wrappedValue: OnboardingViewModel(supabase: supabase))
-    }
+    @StateObject var viewModel: OnboardingViewModel
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    switch viewModel.currentStep {
-                    case .welcome:
-                        WelcomeStepView(viewModel: viewModel)
-                    case .personalInfo:
-                        PersonalInfoStepView(viewModel: viewModel)
-                    case .education:
-                        EducationStepView(viewModel: viewModel)
-                    case .lifePlans:
-                        LifePlansStepView(viewModel: viewModel)
-                    case .finish:
-                        FinishStepView(viewModel: viewModel)
-                    }
+            VStack {
+                switch viewModel.currentStep {
+                case 0: // Welcome
+                    welcomeView
+                case 1: // Personal Info
+                    personalInfoView
+                case 2: // Education
+                    educationView
+                case 3: // Goals
+                    goalsView
+                case 4: // Interests
+                    interestsView
+                default:
+                    EmptyView()
                 }
-                .padding()
+                
+                navigationButtons
             }
-            .navigationTitle("Onboarding")
+            .padding()
+            .navigationTitle("Welcome to WhoAmI")
+            .navigationBarTitleDisplayMode(.inline)
+            .alert("Error", isPresented: $viewModel.showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "An error occurred")
+            }
         }
     }
-}
-
-struct EmailField: View {
-    @Binding var email: String
     
-    var body: some View {
-        TextField("Email", text: $email)
-            .textFieldStyle(RoundedBorderTextFieldStyle())
-            #if os(iOS)
-            .keyboardType(.emailAddress)
-            .textContentType(.username)
-            .textInputAutocapitalization(.never)
-            #endif
-    }
-}
-
-struct WelcomeStepView: View {
-    @ObservedObject var viewModel: OnboardingViewModel
-    
-    var body: some View {
+    private var welcomeView: some View {
         VStack(spacing: 20) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.accentColor)
+            
             Text("Welcome to WhoAmI")
                 .font(.title)
                 .fontWeight(.bold)
@@ -59,151 +49,132 @@ struct WelcomeStepView: View {
                 .font(.headline)
                 .foregroundColor(.secondary)
             
-            Button {
-                viewModel.nextStep()
-            } label: {
-                Text("Get Started")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
-            }
+            Text("We'll ask you a few questions to personalize your experience")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
         }
-        .padding()
     }
-}
-
-struct PersonalInfoStepView: View {
-    @ObservedObject var viewModel: OnboardingViewModel
     
-    var body: some View {
-        VStack(spacing: 16) {
-            TextField("Email", text: $viewModel.email)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            TextField("First Name", text: $viewModel.firstName)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            TextField("Last Name", text: $viewModel.lastName)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            Picker("Gender", selection: $viewModel.gender) {
-                Text("Select Gender").tag(Optional<Gender>.none)
-                ForEach(Gender.allCases, id: \.self) { gender in
-                    Text(gender.rawValue.capitalized).tag(Optional(gender))
-                }
-            }
-            .pickerStyle(MenuPickerStyle())
-            
-            Picker("Role", selection: $viewModel.role) {
-                ForEach(UserRole.allCases, id: \.self) { role in
-                    Text(role.rawValue.capitalized).tag(role)
-                }
-            }
-            .pickerStyle(MenuPickerStyle())
-            
-            Button {
-                viewModel.nextStep()
-            } label: {
-                Text("Next")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
-            }
-        }
-        .padding()
-    }
-}
-
-struct EducationStepView: View {
-    @ObservedObject var viewModel: OnboardingViewModel
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Picker("Education", selection: $viewModel.education) {
-                Text("Select Education").tag(Optional<WhoAmI.Education>.none)
-                ForEach(WhoAmI.Education.allCases, id: \.self) { education in
-                    Text(education.rawValue.capitalized).tag(Optional(education))
-                }
-            }
-            .pickerStyle(MenuPickerStyle())
-            
-            Button {
-                viewModel.nextStep()
-            } label: {
-                Text("Next")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
-            }
-        }
-        .padding()
-    }
-}
-
-struct LifePlansStepView: View {
-    @ObservedObject var viewModel: OnboardingViewModel
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            TextField("What are your life plans?", text: $viewModel.lifePlans)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            Button {
-                viewModel.nextStep()
-            } label: {
-                Text("Next")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
-            }
-        }
-        .padding()
-    }
-}
-
-struct FinishStepView: View {
-    @ObservedObject var viewModel: OnboardingViewModel
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("Almost Done!")
-                .font(.title)
+    private var personalInfoView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Personal Information")
+                .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Thank you for providing your information.")
-                .font(.headline)
-                .foregroundColor(.secondary)
+            TextField("First Name", text: $viewModel.profile.firstName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
             
-            Button {
-                Task {
-                    try? await viewModel.createProfile()
+            TextField("Last Name", text: $viewModel.profile.lastName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            TextField("Email", text: $viewModel.profile.email)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .keyboardType(.emailAddress)
+                .autocapitalization(.none)
+            
+            TextField("Bio (Optional)", text: Binding(
+                get: { viewModel.profile.bio ?? "" },
+                set: { viewModel.profile.bio = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+        }
+    }
+    
+    private var educationView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Education")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Picker("Education Level", selection: Binding(
+                get: { viewModel.profile.educationLevel ?? nil },
+                set: { viewModel.profile.educationLevel = $0 }
+            )) {
+                Text("Select Level").tag(Optional<EducationLevel>.none)
+                ForEach(EducationLevel.allCases, id: \.self) { level in
+                    Text(level.rawValue).tag(Optional(level))
                 }
-            } label: {
-                Text("Complete")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
+            }
+            .pickerStyle(.menu)
+            
+            TextField("Field of Study (Optional)", text: Binding(
+                get: { viewModel.profile.fieldOfStudy ?? "" },
+                set: { viewModel.profile.fieldOfStudy = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+        }
+    }
+    
+    private var goalsView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Your Goals")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            TextField("What are your goals?", text: Binding(
+                get: { viewModel.profile.goals ?? "" },
+                set: { viewModel.profile.goals = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            Text("This helps us recommend relevant courses and tests")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private var interestsView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Your Interests")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            TextField("What are your interests?", text: Binding(
+                get: { viewModel.profile.interests ?? "" },
+                set: { viewModel.profile.interests = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            Text("This helps us personalize your experience")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private var navigationButtons: some View {
+        HStack {
+            if viewModel.currentStep > 0 {
+                Button("Back") {
+                    viewModel.previousStep()
+                }
+            }
+            
+            Spacer()
+            
+            if viewModel.currentStep < viewModel.totalSteps - 1 {
+                Button("Next") {
+                    viewModel.nextStep()
+                }
+            } else {
+                Button("Finish") {
+                    Task {
+                        do {
+                            try await viewModel.createProfile()
+                            dismiss()
+                        } catch {
+                            viewModel.showError = true
+                            viewModel.errorMessage = error.localizedDescription
+                        }
+                    }
+                }
             }
         }
-        .padding()
+        .padding(.top)
     }
 }
 
 #Preview {
-    OnboardingView(supabase: .init(supabaseURL: URL(string: "")!, supabaseKey: ""))
-} 
+    OnboardingView(viewModel: .init(supabase: .init(supabaseURL: URL(string: "")!, supabaseKey: "")))
+}

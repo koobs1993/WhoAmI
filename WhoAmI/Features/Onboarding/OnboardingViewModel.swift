@@ -1,75 +1,75 @@
-import Foundation
+import SwiftUI
 import Supabase
 
 @MainActor
 class OnboardingViewModel: ObservableObject {
-    @Published var error: Error?
-    @Published var questions: [WhoAmI.OnboardingQuestion] = []
-    @Published var currentStep: OnboardingStep = .welcome
-    @Published var email = ""
-    @Published var firstName = ""
-    @Published var lastName = ""
-    @Published var gender: Gender?
-    @Published var role: UserRole = .student
-    @Published var bio = ""
-    @Published var phone = ""
-    @Published var education: WhoAmI.Education?
-    @Published var lifePlans = ""
-    
     private let supabase: SupabaseClient
+    
+    @Published var profile = OnboardingProfile(id: UUID(), firstName: "", lastName: "", email: "")
+    @Published var currentStep = 0
+    @Published var showError = false
+    @Published var errorMessage: String?
+    
+    let totalSteps = 5
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
     }
     
     func nextStep() {
-        switch currentStep {
-        case .welcome:
-            currentStep = .personalInfo
-        case .personalInfo:
-            currentStep = .education
-        case .education:
-            currentStep = .lifePlans
-        case .lifePlans:
-            currentStep = .finish
-        case .finish:
-            break
+        if currentStep < totalSteps - 1 {
+            currentStep += 1
+        }
+    }
+    
+    func previousStep() {
+        if currentStep > 0 {
+            currentStep -= 1
         }
     }
     
     func createProfile() async throws {
-        let profile = UserProfile(
+        // Validate required fields
+        guard !profile.firstName.isEmpty else { throw OnboardingError.missingFirstName }
+        guard !profile.lastName.isEmpty else { throw OnboardingError.missingLastName }
+        guard !profile.email.isEmpty else { throw OnboardingError.missingEmail }
+        
+        // Create user profile
+        let userProfile = UserProfile(
             id: UUID(),
-            userId: UUID(),
-            firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
-            lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
-            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-            bio: bio.trimmingCharacters(in: .whitespacesAndNewlines),
-            avatarUrl: "",
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            email: profile.email,
+            avatarUrl: nil,
+            bio: profile.bio,
+            settings: UserSettings.default,
+            stats: nil,
+            subscription: nil,
+            devices: nil,
             createdAt: Date(),
             updatedAt: Date()
         )
         
-        try await supabase.database
+        let _: PostgrestResponse<UserProfile> = try await supabase
             .from("profiles")
-            .insert(profile)
+            .insert(userProfile)
             .execute()
     }
 }
 
 enum OnboardingError: LocalizedError {
-    case userNotAuthenticated
-    case invalidProfile
-    case saveFailed
+    case missingFirstName
+    case missingLastName
+    case missingEmail
     
     var errorDescription: String? {
         switch self {
-        case .userNotAuthenticated:
-            return "User is not authenticated"
-        case .invalidProfile:
-            return "Invalid profile data"
-        case .saveFailed:
-            return "Failed to save profile"
+        case .missingFirstName:
+            return "Please enter your first name"
+        case .missingLastName:
+            return "Please enter your last name"
+        case .missingEmail:
+            return "Please enter your email"
         }
     }
-} 
+}

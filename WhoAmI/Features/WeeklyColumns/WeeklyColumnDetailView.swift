@@ -66,7 +66,7 @@ struct WeeklyColumnDetailView: View {
                 .padding(.horizontal)
             }
         }
-        .background(colorScheme == .dark ? Color(.windowBackgroundColor) : Color(.textBackgroundColor))
+        .background(colorScheme == .dark ? Color.adaptiveBackground : Color.adaptiveSecondaryBackground)
         #if os(iOS)
         .sheet(isPresented: $showingShareSheet) {
             ShareSheet(activityItems: [createShareText()])
@@ -156,7 +156,7 @@ struct MacShareView: View {
         }
         .padding()
         .frame(width: 300, height: 200)
-        .background(colorScheme == .dark ? Color(.windowBackgroundColor) : Color(.textBackgroundColor))
+        .background(colorScheme == .dark ? Color.adaptiveBackground : Color.adaptiveSecondaryBackground)
     }
 }
-#endif 
+#endif

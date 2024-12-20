@@ -9,9 +9,9 @@ class CharacterDetailViewModel: ObservableObject {
     @Published var error: Error?
     
     private let supabase: SupabaseClient
-    private let characterId: UUID
+    private let characterId: Int
     
-    init(supabase: SupabaseClient, characterId: UUID) {
+    init(supabase: SupabaseClient, characterId: Int) {
         self.supabase = supabase
         self.characterId = characterId
     }
@@ -20,10 +20,10 @@ class CharacterDetailViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        let response: PostgrestResponse<Character> = try await supabase.database
+        let response: PostgrestResponse<Character> = try await supabase
             .from("characters")
             .select()
-            .eq("id", value: characterId.uuidString)
+            .eq("id", value: characterId)
             .single()
             .execute()
         
@@ -32,16 +32,24 @@ class CharacterDetailViewModel: ObservableObject {
     }
     
     func fetchProblems() async throws {
-        let response: PostgrestResponse<[Dictionary<String, String>]> = try await supabase.database
+        struct JoinResult: Codable {
+            let problemId: Int
+            
+            enum CodingKeys: String, CodingKey {
+                case problemId = "problem_id"
+            }
+        }
+        
+        let response: PostgrestResponse<[JoinResult]> = try await supabase
             .from("character_problems")
             .select("problem_id")
-            .eq("character_id", value: characterId.uuidString)
+            .eq("character_id", value: characterId)
             .execute()
         
-        let problemIds = response.value.compactMap { $0["problem_id"] }
+        let problemIds = response.value.map { $0.problemId }
         
         if !problemIds.isEmpty {
-            let problemsResponse: PostgrestResponse<[Problem]> = try await supabase.database
+            let problemsResponse: PostgrestResponse<[Problem]> = try await supabase
                 .from("problems")
                 .select()
                 .or(problemIds.map { "id.eq.\($0)" }.joined(separator: ","))
@@ -55,10 +63,10 @@ class CharacterDetailViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        try await supabase.database
+        try await supabase
             .from("characters")
             .update(updatedCharacter)
-            .eq("id", value: characterId.uuidString)
+            .eq("id", value: characterId)
             .execute()
         
         character = updatedCharacter

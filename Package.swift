@@ -3,39 +3,53 @@ import PackageDescription
 
 let package = Package(
     name: "WhoAmI",
+    defaultLocalization: "en",
     platforms: [
-        .iOS(.v15),
-        .macOS(.v12)
+        .iOS(.v15)
     ],
     products: [
         .library(
             name: "WhoAmI",
-            targets: ["WhoAmI"]),
+            targets: ["Models", "Features"]
+        )
     ],
     dependencies: [
-        .package(url: "https://github.com/supabase-community/supabase-swift.git", from: "1.0.0"),
-        .package(url: "https://github.com/SDWebImage/SDWebImageSwiftUI.git", from: "2.2.6")
+        .package(url: "https://github.com/supabase-community/supabase-swift.git", from: "2.3.1"),
+        .package(url: "https://github.com/supabase-community/gotrue-swift.git", from: "1.3.0")
     ],
     targets: [
         .target(
-            name: "WhoAmI",
+            name: "Models",
             dependencies: [
                 .product(name: "Supabase", package: "supabase-swift"),
-                .product(name: "SDWebImageSwiftUI", package: "SDWebImageSwiftUI")
+                .product(name: "GoTrue", package: "gotrue-swift")
             ],
-            path: "WhoAmI",
-            exclude: [
-                "Info.plist",
-                "Preview Content/Preview Assets.xcassets",
-                "Resources/Assets.xcassets",
-                "WhoAmI.entitlements"
-            ],
-            resources: [
-                .process("Assets.xcassets")
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug)),
+                .enableUpcomingFeature("BareSlashRegexLiterals"),
+                .enableUpcomingFeature("ConciseMagicFile"),
+                .enableUpcomingFeature("ExistentialAny"),
+                .enableUpcomingFeature("ForwardTrailingClosures"),
+                .enableUpcomingFeature("ImplicitOpenExistentials"),
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
-        .testTarget(
-            name: "WhoAmITests",
-            dependencies: ["WhoAmI"]),
+        .target(
+            name: "Features",
+            dependencies: [
+                .product(name: "Supabase", package: "supabase-swift"),
+                .product(name: "GoTrue", package: "gotrue-swift"),
+                "Models"
+            ],
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug)),
+                .enableUpcomingFeature("BareSlashRegexLiterals"),
+                .enableUpcomingFeature("ConciseMagicFile"),
+                .enableUpcomingFeature("ExistentialAny"),
+                .enableUpcomingFeature("ForwardTrailingClosures"),
+                .enableUpcomingFeature("ImplicitOpenExistentials"),
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
+        )
     ]
-) 
+)

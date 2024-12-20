@@ -7,7 +7,7 @@ class OnboardingService: BaseService {
     }
     
     func fetchQuestions() async throws -> [WhoAmI.OnboardingQuestion] {
-        let response: PostgrestResponse<[WhoAmI.OnboardingQuestion]> = try await supabase.database
+        let response: PostgrestResponse<[WhoAmI.OnboardingQuestion]> = try await supabase
             .from("onboarding_questions")
             .select()
             .execute()
@@ -15,9 +15,9 @@ class OnboardingService: BaseService {
     }
     
     func saveUserProfile(_ profile: UserProfile) async throws {
-        try await supabase.database
+        try await supabase
             .from("user_profiles")
             .insert(profile)
             .execute()
     }
-} 
+}

@@ -10,9 +10,27 @@ class TestSessionViewModel: ObservableObject {
     @Published var questions: [PsychTest.TestQuestion] = []
     @Published var currentQuestionIndex = 0
     @Published var answers: [String: String] = [:]
+    @Published var selectedAnswerIndex: Int?
     @Published var isLoading = false
     @Published var error: Error?
     @Published var isComplete = false
+    @Published var timeRemaining: TimeInterval = 3600 // 1 hour default
+    private var timer: Timer?
+    
+    var currentScore: Int {
+        // Calculate score based on correct answers
+        var score = 0
+        for (questionId, answer) in answers {
+            if let question = questions.first(where: { $0.id.uuidString == questionId }),
+               let answerIndex = Int(answer),
+               let options = question.options,
+               answerIndex < options.count,
+               question.correctAnswer == answerIndex {
+                score += 1
+            }
+        }
+        return score
+    }
     
     var progress: Double {
         guard !questions.isEmpty else { return 0 }
@@ -58,10 +76,46 @@ class TestSessionViewModel: ObservableObject {
         }
     }
     
-    func submitAnswer(_ answer: String) {
+    func selectAnswer(_ index: Int) {
+        selectedAnswerIndex = index
         guard let question = currentQuestion else { return }
-        answers[question.id.uuidString] = answer
+        answers[question.id.uuidString] = String(index)
+    }
+    
+    func previousQuestion() {
+        if currentQuestionIndex > 0 {
+            currentQuestionIndex -= 1
+            selectedAnswerIndex = Int(answers[questions[currentQuestionIndex].id.uuidString] ?? "")
+        }
+    }
+    
+    func nextQuestion() {
         moveToNextQuestion()
+    }
+    
+    func pauseTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    func resumeTimer() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.timeRemaining > 0 {
+                self.timeRemaining -= 1
+            } else {
+                self.completeTest()
+            }
+        }
+    }
+    
+    func completeTest() {
+        isComplete = true
+        pauseTimer()
+        Task {
+            await saveProgress()
+        }
     }
     
     private func moveToNextQuestion() {

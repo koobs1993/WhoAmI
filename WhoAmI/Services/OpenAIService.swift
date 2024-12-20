@@ -1,5 +1,6 @@
-import Foundation
+// import Foundation
 
+/*
 class OpenAIService {
     private let apiKey: String
     private let baseURL = "https://api.openai.com/v1/chat/completions"
@@ -99,3 +100,4 @@ struct OpenAIErrorResponse: Codable {
         let message: String
     }
 }
+*/

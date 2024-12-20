@@ -86,7 +86,7 @@ class CourseService: BaseService {
             return cached
         }
         
-        let response: PostgrestResponse<[Course]> = try await supabase.database
+        let response: PostgrestResponse<[Course]> = try await supabase
             .from("courses")
             .select("""
                 id,
@@ -120,7 +120,7 @@ class CourseService: BaseService {
             return cached
         }
         
-        let response: PostgrestResponse<Course> = try await supabase.database
+        let response: PostgrestResponse<Course> = try await supabase
             .from("courses")
             .select("""
                 id,
@@ -151,7 +151,7 @@ class CourseService: BaseService {
     }
     
     func saveUserLesson(_ request: UserLessonRequest) async throws {
-        try await supabase.database
+        try await supabase
             .from("user_lessons")
             .insert(request.dictionary)
             .execute()
@@ -162,7 +162,7 @@ class CourseService: BaseService {
     }
     
     func updateUserLesson(userLessonId: Int, request: UserLessonRequest) async throws {
-        try await supabase.database
+        try await supabase
             .from("user_lessons")
             .update(request.dictionary)
             .eq("id", value: userLessonId)
@@ -174,7 +174,7 @@ class CourseService: BaseService {
     }
     
     func saveUserResponse(_ request: UserResponseRequest) async throws {
-        try await supabase.database
+        try await supabase
             .from("user_responses")
             .insert(request.dictionary)
             .execute()

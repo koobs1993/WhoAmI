@@ -1,141 +1,120 @@
 import SwiftUI
-import Supabase
 
 struct NotificationsView: View {
-    @StateObject private var viewModel: NotificationsViewModel
-    
-    init(supabase: SupabaseClient, userId: UUID) {
-        _viewModel = StateObject(wrappedValue: NotificationsViewModel(supabase: supabase, userId: userId))
-    }
+    @StateObject var viewModel: NotificationsViewModel
     
     var body: some View {
-        NavigationView {
-            Group {
-                if viewModel.isLoading {
-                    ProgressView()
-                } else if viewModel.notifications.isEmpty {
-                    NotificationsEmptyStateView()
-                } else {
-                    List {
-                        ForEach(viewModel.notifications) { notification in
-                            NavigationLink(destination: NotificationDetailView(
-                                notification: UserNotification(
-                                    id: notification.id,
-                                    userId: notification.userId,
-                                    type: notificationType(from: notification.type),
-                                    title: notification.title,
-                                    message: notification.message,
-                                    read: notification.read,
-                                    createdAt: notification.createdAt
-                                ),
-                                onAction: { userNotification in
-                                    Task {
-                                        await viewModel.markAsRead(notification)
-                                    }
-                                }
-                            )) {
-                                NotificationRow(notification: UserNotification(
-                                    id: notification.id,
-                                    userId: notification.userId,
-                                    type: notificationType(from: notification.type),
-                                    title: notification.title,
-                                    message: notification.message,
-                                    read: notification.read,
-                                    createdAt: notification.createdAt
-                                ))
-                            }
-                        }
+        List {
+            ForEach(viewModel.notifications) { notification in
+                NotificationRow(notification: notification) { notification in
+                    Task {
+                        await viewModel.markAsRead(notification)
                     }
                 }
             }
-            .navigationTitle("Notifications")
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    NavigationLink(destination: NotificationSettingsView(viewModel: viewModel)) {
-                        Image(systemName: "gear")
+            .onDelete { indexSet in
+                guard let index = indexSet.first else { return }
+                let notification = viewModel.notifications[index]
+                Task {
+                    await viewModel.deleteNotification(notification)
+                }
+            }
+        }
+        .navigationTitle("Notifications")
+        .toolbar {
+            if !viewModel.notifications.isEmpty {
+                Button("Clear All") {
+                    Task {
+                        await viewModel.clearAll()
                     }
                 }
             }
+        }
+        .refreshable {
+            await viewModel.fetchNotifications()
         }
         .task {
             await viewModel.fetchNotifications()
         }
     }
-    
-    private func notificationType(from type: String) -> WhoAmI.NotificationType {
-        switch type.lowercased() {
-        case "warning":
-            return .warning
-        case "success":
-            return .success
-        case "error":
-            return .error
-        case "course_update":
-            return .courseUpdate
-        case "test_reminder":
-            return .testReminder
-        case "message":
-            return .message
-        case "achievement":
-            return .achievement
-        case "system":
-            return .system
-        default:
-            return .info
-        }
-    }
-}
-
-struct NotificationsEmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bell.slash")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            
-            Text("No Notifications")
-                .font(.headline)
-            
-            Text("You don't have any notifications yet.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
 }
 
 struct NotificationRow: View {
     let notification: UserNotification
+    let onAction: (UserNotification) -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: notification.type.icon)
-                    .foregroundColor(notification.type.color)
-                Text(notification.title)
-                    .font(.headline)
+        Button {
+            if notification.status == .unread {
+                onAction(notification)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: iconName)
+                    .font(.title2)
+                    .foregroundStyle(iconColor)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(notification.title)
+                        .font(.headline)
+                        .foregroundStyle(notification.status == .unread ? .primary : .secondary)
+                    
+                    Text(notification.message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    
+                    Text(timeAgo)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
                 Spacer()
-                if !notification.read {
+                
+                if notification.status == .unread {
                     Circle()
-                        .fill(Color.blue)
+                        .fill(.blue)
                         .frame(width: 8, height: 8)
                 }
             }
-            
-            Text(notification.message)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-            
-            Text(notification.createdAt, style: .relative)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            .padding(.vertical, 8)
         }
-        .padding(.vertical, 8)
+        .buttonStyle(.plain)
+    }
+    
+    private var iconName: String {
+        switch notification.type {
+        case .system: return "bell.fill"
+        case .course: return "book.fill"
+        case .test: return "pencil.circle.fill"
+        case .achievement: return "star.fill"
+        case .message: return "message.fill"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch notification.type {
+        case .system: return .gray
+        case .course: return .blue
+        case .test: return .purple
+        case .achievement: return .yellow
+        case .message: return .green
+        }
+    }
+    
+    private var timeAgo: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: notification.createdAt, relativeTo: Date())
     }
 }
 
 #Preview {
-    NotificationsView(supabase: Config.supabaseClient, userId: UUID())
+    NavigationStack {
+        NotificationsView(viewModel: NotificationsViewModel(
+            supabase: Config.supabaseClient,
+            userId: UUID()
+        ))
+    }
 }

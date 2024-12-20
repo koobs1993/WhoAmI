@@ -10,6 +10,7 @@ enum AuthModels {
         case userNotFound
         case invalidCredentials
         case networkError(Error)
+        case unknown
         
         var errorDescription: String? {
             switch self {
@@ -29,6 +30,8 @@ enum AuthModels {
                 return "Invalid email or password"
             case .networkError(let error):
                 return "Network error: \(error.localizedDescription)"
+            case .unknown:
+                return "An unknown error occurred"
             }
         }
     }
@@ -40,6 +43,19 @@ enum AuthModels {
     }
     
     // Full signup data for profile completion
+    enum Gender: String, Codable {
+        case male = "male"
+        case female = "female"
+        case other = "other"
+        case notSpecified = "not_specified"
+    }
+    
+    enum UserRole: String, Codable {
+        case student = "student"
+        case teacher = "teacher"
+        case admin = "admin"
+    }
+    
     struct SignUpData: Codable {
         let email: String
         let password: String

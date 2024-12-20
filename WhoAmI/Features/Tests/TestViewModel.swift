@@ -43,7 +43,7 @@ class TestViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
-            let response: PostgrestResponse<PsychTest> = try await supabase.database
+            let response: PostgrestResponse<PsychTest> = try await supabase
                 .from("psychtests")
                 .select("""
                     id,
@@ -108,7 +108,7 @@ class TestViewModel: ObservableObject {
         isComplete = true
         
         // Save progress
-        try await supabase.database
+        try await supabase
             .from("testprogress")
             .upsert([
                 "id": UUID().uuidString,
@@ -147,7 +147,7 @@ class TestViewModel: ObservableObject {
             "completed_at": ISO8601DateFormatter().string(from: Date())
         ]
         
-        try await supabase.database
+        try await supabase
             .from("test_results")
             .insert(data)
             .execute()

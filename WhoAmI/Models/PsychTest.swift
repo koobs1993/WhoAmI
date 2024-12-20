@@ -26,7 +26,7 @@ public struct PsychTest: Codable, Identifiable {
         case isActive = "is_active"
         case questions
         case userProgress = "testprogress"
-        case benefits
+        case benefits = "testbenefits"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -95,6 +95,53 @@ public struct PsychTest: Codable, Identifiable {
         self.benefits = benefits
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+    
+    public static var preview: PsychTest {
+        PsychTest(
+            id: UUID(),
+            title: "Personality Assessment",
+            description: "Discover your unique personality traits and understand yourself better",
+            shortDescription: "Discover your unique personality traits",
+            category: .personality,
+            imageUrl: URL(string: "https://example.com/test-image.jpg"),
+            duration: 1800, // 30 minutes
+            durationMinutes: 30,
+            questions: [
+                TestQuestion(
+                    questionId: 1,
+                    question: "How do you typically react to new situations?",
+                    options: [
+                        QuestionOption(text: "With excitement and enthusiasm", value: 1),
+                        QuestionOption(text: "With careful consideration", value: 2),
+                        QuestionOption(text: "With some anxiety", value: 3),
+                        QuestionOption(text: "With skepticism", value: 4)
+                    ]
+                ),
+                TestQuestion(
+                    questionId: 2,
+                    question: "How do you prefer to spend your free time?",
+                    options: [
+                        QuestionOption(text: "With friends and family", value: 1),
+                        QuestionOption(text: "Pursuing hobbies alone", value: 2),
+                        QuestionOption(text: "Learning new skills", value: 3),
+                        QuestionOption(text: "Relaxing and recharging", value: 4)
+                    ]
+                )
+            ],
+            benefits: [
+                TestBenefit(
+                    id: UUID(),
+                    title: "Self-Understanding",
+                    description: "Gain deep insights into your personality traits and behaviors"
+                ),
+                TestBenefit(
+                    id: UUID(),
+                    title: "Personal Growth",
+                    description: "Identify areas for personal development and improvement"
+                )
+            ]
+        )
     }
     
     public struct TestQuestion: Codable, Identifiable, QuestionType {

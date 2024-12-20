@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LessonRow: View {
     let lesson: Lesson
+    var onStatusChange: ((LessonStatus) -> Void)?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -16,11 +17,6 @@ struct LessonRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
-                if let status = lesson.status {
-                    Image(systemName: statusIcon(for: status))
-                        .foregroundColor(statusColor(for: status))
-                }
             }
             
             if let description = lesson.description {
@@ -28,6 +24,25 @@ struct LessonRow: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+            }
+            
+            if let status = lesson.status {
+                HStack {
+                    Spacer()
+                    Menu {
+                        ForEach(LessonStatus.allCases, id: \.self) { newStatus in
+                            Button(action: {
+                                onStatusChange?(newStatus)
+                            }) {
+                                Label(newStatus.displayName, systemImage: newStatus.iconName)
+                            }
+                        }
+                    } label: {
+                        Label(status.displayName, systemImage: status.iconName)
+                            .font(.caption)
+                            .foregroundColor(status.color)
+                    }
+                }
             }
         }
         .padding()
@@ -37,28 +52,32 @@ struct LessonRow: View {
         .background(Color(nsColor: .textBackgroundColor))
         #endif
         .cornerRadius(8)
-        .shadow(radius: 2)
+        .shadow(radius: 1)
     }
-    
-    private func statusIcon(for status: LessonStatus) -> String {
-        switch status {
-        case .notStarted:
-            return "circle"
-        case .inProgress:
-            return "circle.lefthalf.filled"
-        case .completed:
-            return "checkmark.circle.fill"
+}
+
+extension LessonStatus {
+    var displayName: String {
+        switch self {
+        case .notStarted: return "Not Started"
+        case .inProgress: return "In Progress"
+        case .completed: return "Completed"
         }
     }
     
-    private func statusColor(for status: LessonStatus) -> Color {
-        switch status {
-        case .notStarted:
-            return .secondary
-        case .inProgress:
-            return .orange
-        case .completed:
-            return .green
+    var iconName: String {
+        switch self {
+        case .notStarted: return "circle"
+        case .inProgress: return "clock"
+        case .completed: return "checkmark.circle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .notStarted: return .secondary
+        case .inProgress: return .blue
+        case .completed: return .green
         }
     }
 }
@@ -66,16 +85,14 @@ struct LessonRow: View {
 #Preview {
     LessonRow(
         lesson: Lesson(
-            id: 1,
-            courseId: 1,
+            id: UUID(),
+            courseId: UUID(),
             title: "Sample Lesson",
             description: "This is a sample lesson description that might be a bit longer to show how it wraps.",
-            content: "",
+            content: "Full lesson content here...",
             duration: 30,
             order: 1,
-            status: .inProgress,
-            createdAt: Date(),
-            updatedAt: Date()
+            status: .inProgress
         )
     )
     .padding()

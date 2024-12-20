@@ -1,29 +1,120 @@
+// Chat UI Components temporarily disabled
+/*
 import SwiftUI
-import Supabase
 
-struct ChatInputView: View {
-    @Binding var message: String
-    let isLoading: Bool
-    let onSend: () -> Void
+struct ChatLoadingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Loading chat...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .windowBackgroundColor))
+        #endif
+    }
+}
+
+struct ChatEmptyView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 60))
+                .foregroundStyle(.blue.opacity(0.8))
+            
+            Text("Start Your Journey")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("Begin a conversation with our AI assistant to explore your thoughts and feelings.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .windowBackgroundColor))
+        #endif
+    }
+}
+
+struct ChatErrorView: View {
+    let error: Error
+    let retry: () -> Void
     
     var body: some View {
-        HStack {
-            TextField("Type a message...", text: $message)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .disabled(isLoading)
+        VStack(spacing: 20) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.red)
             
-            Button(action: onSend) {
-                if isLoading {
-                    ProgressView()
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: "paperplane.fill")
+            Text("Unable to Load Chat")
+                .font(.title3)
+                .fontWeight(.semibold)
+            
+            Text(error.localizedDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            
+            Button(action: retry) {
+                HStack {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Try Again")
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(Color.blue)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #if os(iOS)
+        .background(Color(uiColor: .systemBackground))
+        #else
+        .background(Color(nsColor: .windowBackgroundColor))
+        #endif
+    }
+}
+
+struct ChatSessionRow: View {
+    let session: ChatSession
+    let lastMessage: String?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(session.title ?? "New Chat")
+                    .font(.headline)
+                
+                Spacer()
+                
+                if let createdAt = session.createdAt {
+                    Text(createdAt.formatted(.relative(presentation: .named)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .disabled(message.isEmpty || isLoading)
+            
+            if let lastMessage = lastMessage {
+                Text(lastMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
         }
-        .padding()
-        .background(Color(.windowBackgroundColor))
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
     }
 }
 
@@ -31,99 +122,113 @@ struct ChatBubble: View {
     let message: ChatMessage
     let isCurrentUser: Bool
     
+    private var backgroundColor: Color {
+        if isCurrentUser {
+            return .blue
+        } else {
+            #if os(iOS)
+            return Color(uiColor: .systemGray6)
+            #else
+            return Color(nsColor: .controlBackgroundColor)
+            #endif
+        }
+    }
+    
+    private var textColor: Color {
+        isCurrentUser ? .white : .primary
+    }
+    
+    private var alignment: HorizontalAlignment {
+        isCurrentUser ? .trailing : .leading
+    }
+    
     var body: some View {
-        HStack {
-            if isCurrentUser { Spacer() }
-            
-            VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .padding()
-                    .background(isCurrentUser ? Color.blue : Color(.windowBackgroundColor))
-                    .foregroundColor(isCurrentUser ? .white : .primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: alignment, spacing: 4) {
+            HStack {
+                if !isCurrentUser {
+                    Image(systemName: "brain.head.profile")
+                        .foregroundStyle(.blue)
+                        .font(.system(size: 24))
+                        .padding(.trailing, 4)
+                }
                 
-                if let date = message.createdAt {
-                    Text(date, style: .time)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(message.content)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(backgroundColor)
+                        .foregroundStyle(textColor)
+                        .cornerRadius(20)
+                }
+                .frame(maxWidth: 280, alignment: isCurrentUser ? .trailing : .leading)
+                
+                if isCurrentUser {
+                    Image(systemName: "person.circle.fill")
+                        .foregroundStyle(.blue)
+                        .font(.system(size: 24))
+                        .padding(.leading, 4)
                 }
             }
             
-            if !isCurrentUser { Spacer() }
-        }
-    }
-}
-
-struct ChatEmptyView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "message")
-                .font(.largeTitle)
-                .foregroundColor(.blue)
-            
-            Text("No messages yet")
-                .font(.headline)
-            
-            Text("Start a conversation to get help and insights")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct ChatLoadingView: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Loading messages...")
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct ChatErrorView: View {
-    let error: Error
-    let onRetry: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundColor(.red)
-            
-            Text("Error loading messages")
-                .font(.headline)
-            
-            Text(error.localizedDescription)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button("Retry", action: onRetry)
-                .buttonStyle(.borderedProminent)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-@available(macOS 13.0, iOS 16.0, *)
-struct ChatSessionRow: View {
-    let session: ChatSession
-    
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text(session.title ?? "Untitled Chat")
-                .font(.headline)
-            if let date = session.createdAt {
-                Text(date.formatted())
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            if let createdAt = message.createdAt {
+                Text(createdAt.formatted(.relative(presentation: .numeric)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: isCurrentUser ? .trailing : .leading)
+        .padding(.horizontal)
     }
 }
+
+struct ChatInputView: View {
+    @Binding var message: String
+    @FocusState private var isFocused: Bool
+    let isLoading: Bool
+    let onSend: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            HStack(spacing: 12) {
+                TextField("Type your message...", text: $message, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    #if os(iOS)
+                    .background(Color(uiColor: .systemGray6))
+                    #else
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    #endif
+                    .cornerRadius(20)
+                    .focused($isFocused)
+                    .disabled(isLoading)
+                    .lineLimit(1...5)
+                
+                Button(action: {
+                    onSend()
+                    isFocused = false
+                }) {
+                    Group {
+                        if isLoading {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .background(message.isEmpty ? Color.blue.opacity(0.5) : Color.blue)
+                    .clipShape(Circle())
+                }
+                .disabled(message.isEmpty || isLoading)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(.ultraThinMaterial)
+    }
+}
+*/

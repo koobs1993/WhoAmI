@@ -1,43 +1,30 @@
 import Foundation
 import Supabase
 
-struct Config {
-    static let supabaseURL = URL(string: "https://slygbgucywxtriatyuye.supabase.co")!
+enum Config {
+    static let supabaseUrl = URL(string: "https://slwgbgujcywxtrituyue.supabase.co")!
     static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNseWdiZ3VjeXd4dHJpYXR5dXllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQwNjk3MTYsImV4cCI6MjA0OTY0NTcxNn0.BEac7s59GHkFHXi8NiGfMFj7aVO4pG6eBIITzUcEBcE"
     
-    static let supabaseClient = SupabaseClient(
-        supabaseURL: supabaseURL,
-        supabaseKey: supabaseAnonKey
-    )
+    static var supabaseClient: SupabaseClient {
+        // Create client with default options
+        return SupabaseClient(
+            supabaseURL: supabaseUrl,
+            supabaseKey: supabaseAnonKey
+        )
+    }
     
-    static let openAIAPIKey = "YOUR_OPENAI_API_KEY"
+    #if DEBUG
+    static var previewClient: SupabaseClient {
+        supabaseClient // Use same configured client for previews
+    }
+    #endif
     
-    static let defaultSettings = UserDeviceSettings(
-        id: UUID(),
-        userId: UUID(), // This will be replaced with actual user ID when used
-        notificationsEnabled: true,
-        courseUpdatesEnabled: true,
-        testRemindersEnabled: true,
-        weeklySummariesEnabled: true,
-        analyticsEnabled: true,
-        trackingAuthorized: true,
-        darkModeEnabled: false,
-        hapticsEnabled: true,
-        fontSize: 16,
-        soundEnabled: true,
-        createdAt: Date(),
-        updatedAt: Date()
-    )
-    
-    static let defaultPrivacySettings = UserPrivacySettings(
-        id: UUID(),
-        userId: UUID(), // This will be replaced with actual user ID when used
-        isPublic: true,
-        showEmail: false,
-        showLocation: false,
-        showActivity: true,
-        showStats: true,
-        createdAt: Date(),
-        updatedAt: Date()
+    static let defaultSettings = UserSettings(
+        theme: .system,
+        notifications: .default,
+        accessibility: .default,
+        privacy: .default,
+        language: Locale.current.language.languageCode?.identifier ?? "en",
+        timezone: TimeZone.current.identifier
     )
 }

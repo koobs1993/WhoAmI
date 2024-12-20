@@ -50,12 +50,15 @@ final class TestHelper: @unchecked Sendable {
         try await testCharacterInteractions()
     }
     
+    // Chat tests temporarily disabled
+    /*
     func runChatTests() async throws {
         // Test chat functionality
         try await testChatSession()
         try await testMessageSending()
         try await testChatHistory()
     }
+    */
     
     func runProfileTests() async throws {
         // Test profile functionality
@@ -91,9 +94,12 @@ final class TestHelper: @unchecked Sendable {
         // TODO: Implement character flow testing
     }
     
+    // Chat flow test temporarily disabled
+    /*
     func testChatFlow() async throws {
         // TODO: Implement chat flow testing
     }
+    */
     
     func testProfileFlow() async throws {
         // TODO: Implement profile flow testing
@@ -165,6 +171,8 @@ final class TestHelper: @unchecked Sendable {
         // Implement character interactions test
     }
     
+    // Chat test methods temporarily disabled
+    /*
     private func testChatSession() async throws {
         // Implement chat session test
     }
@@ -176,6 +184,7 @@ final class TestHelper: @unchecked Sendable {
     private func testChatHistory() async throws {
         // Implement chat history test
     }
+    */
     
     private func testProfileUpdate() async throws {
         // Implement profile update test

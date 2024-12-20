@@ -70,7 +70,7 @@ struct WeeklyColumnRow: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(colorScheme == .dark ? Color(.windowBackgroundColor) : .white)
+                .fill(colorScheme == .dark ? Color.adaptiveBackground : Color.adaptiveSecondaryBackground)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
         )
     }

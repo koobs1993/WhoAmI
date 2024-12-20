@@ -4,7 +4,6 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
             "type": "lldb",
             "request": "launch",
@@ -12,6 +11,24 @@
             "program": "${workspaceFolder}/<executable file>",
             "args": [],
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WhoAmI}",
+            "name": "Debug InsertExampleData",
+            "program": "${workspaceFolder:WhoAmI}/.build/debug/InsertExampleData",
+            "preLaunchTask": "swift: Build Debug InsertExampleData"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WhoAmI}",
+            "name": "Release InsertExampleData",
+            "program": "${workspaceFolder:WhoAmI}/.build/release/InsertExampleData",
+            "preLaunchTask": "swift: Build Release InsertExampleData"
         }
     ]
 }

@@ -7,7 +7,7 @@ class TestListViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: Error?
     
-    private let supabase: SupabaseClient
+    let supabase: SupabaseClient
     
     init(supabase: SupabaseClient) {
         self.supabase = supabase
@@ -45,7 +45,7 @@ class TestListViewModel: ObservableObject {
                         required,
                         options
                     ),
-                    benefits (
+                    testbenefits (
                         id,
                         title,
                         description

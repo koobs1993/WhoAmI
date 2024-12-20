@@ -1,174 +1,114 @@
 import Foundation
 import Supabase
 
-struct NotificationItem: Identifiable, Codable {
-    let id: UUID
-    let userId: UUID
-    let title: String
-    let message: String
-    let type: String
-    var read: Bool
-    let createdAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId = "user_id"
-        case title
-        case message
-        case type
-        case read
-        case createdAt = "created_at"
-    }
-}
-
-struct UserSettingsRequest: Codable {
-    let userId: UUID
-    let notificationsEnabled: Bool
-    let courseUpdatesEnabled: Bool
-    let testRemindersEnabled: Bool
-    let weeklySummariesEnabled: Bool
-    let analyticsEnabled: Bool
-    let trackingAuthorized: Bool
-    let darkModeEnabled: Bool
-    let hapticsEnabled: Bool
-    let fontSize: Int
-    let soundEnabled: Bool
-    
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case notificationsEnabled = "notifications_enabled"
-        case courseUpdatesEnabled = "course_updates_enabled"
-        case testRemindersEnabled = "test_reminders_enabled"
-        case weeklySummariesEnabled = "weekly_summaries_enabled"
-        case analyticsEnabled = "analytics_enabled"
-        case trackingAuthorized = "tracking_authorized"
-        case darkModeEnabled = "dark_mode_enabled"
-        case hapticsEnabled = "haptics_enabled"
-        case fontSize = "font_size"
-        case soundEnabled = "sound_enabled"
-    }
-}
-
 @MainActor
 class NotificationsViewModel: ObservableObject {
-    @Published var notifications: [NotificationItem] = []
-    @Published var deviceSettings: UserDeviceSettings
-    @Published var isLoading = false
-    @Published var error: Error?
-    
     private let supabase: SupabaseClient
     private let userId: UUID
+    
+    @Published var notifications: [UserNotification] = []
+    @Published var deviceSettings = DeviceSettings.default
+    @Published var error: Error?
+    @Published var isLoading = false
     
     init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
         self.userId = userId
-        self.deviceSettings = UserDeviceSettings(
-            userId: userId,
-            notificationsEnabled: true,
-            courseUpdatesEnabled: true,
-            testRemindersEnabled: true,
-            weeklySummariesEnabled: true
-        )
     }
     
     func loadSettings() async {
         isLoading = true
-        defer { isLoading = false }
-        
         do {
-            let response: PostgrestResponse<[UserDeviceSettings]> = try await supabase.database
-                .from("user_settings")
+            let response: PostgrestResponse<UserDevice> = try await supabase
+                .from("user_devices")
                 .select()
-                .eq("user_id", value: userId.uuidString)
-                .limit(1)
+                .eq("user_id", value: userId)
+                .single()
                 .execute()
             
-            if let settings = response.value.first {
-                await MainActor.run {
-                    self.deviceSettings = settings
-                }
-            }
+            deviceSettings = response.value.settings ?? .default
+            isLoading = false
         } catch {
-            await MainActor.run {
-                self.error = error
-            }
+            self.error = error
+            isLoading = false
+        }
+    }
+    
+    func updateSettings() async {
+        do {
+            try await supabase
+                .from("user_devices")
+                .update(["settings": deviceSettings])
+                .eq("user_id", value: userId)
+                .execute()
+        } catch {
+            self.error = error
         }
     }
     
     func fetchNotifications() async {
         isLoading = true
-        defer { isLoading = false }
-        
         do {
-            let response: PostgrestResponse<[NotificationItem]> = try await supabase.database
+            let response: PostgrestResponse<[UserNotification]> = try await supabase
                 .from("notifications")
                 .select()
-                .eq("user_id", value: userId.uuidString)
+                .eq("user_id", value: userId)
                 .order("created_at", ascending: false)
-                .limit(50)
                 .execute()
             
-            await MainActor.run {
-                self.notifications = response.value
-            }
+            notifications = response.value
+            isLoading = false
         } catch {
-            await MainActor.run {
-                self.error = error
-            }
+            self.error = error
+            isLoading = false
         }
     }
     
-    func saveDeviceSettings() async {
-        isLoading = true
-        defer { isLoading = false }
-        
+    func markAsRead(_ notification: UserNotification) async {
         do {
-            let request = UserSettingsRequest(
-                userId: userId,
-                notificationsEnabled: deviceSettings.notificationsEnabled,
-                courseUpdatesEnabled: deviceSettings.courseUpdatesEnabled,
-                testRemindersEnabled: deviceSettings.testRemindersEnabled,
-                weeklySummariesEnabled: deviceSettings.weeklySummariesEnabled,
-                analyticsEnabled: deviceSettings.analyticsEnabled,
-                trackingAuthorized: deviceSettings.trackingAuthorized,
-                darkModeEnabled: deviceSettings.darkModeEnabled,
-                hapticsEnabled: deviceSettings.hapticsEnabled,
-                fontSize: deviceSettings.fontSize,
-                soundEnabled: deviceSettings.soundEnabled
-            )
+            let updateData: [String: String] = ["status": UserNotification.NotificationStatus.read.rawValue]
             
-            try await supabase.database
-                .from("user_settings")
-                .upsert(request)
-                .execute()
-        } catch {
-            await MainActor.run {
-                self.error = error
-            }
-        }
-    }
-    
-    func markAsRead(_ notification: NotificationItem) async {
-        do {
-            try await supabase.database
+            try await supabase
                 .from("notifications")
-                .update(["read": true])
-                .eq("id", value: notification.id.uuidString)
+                .update(updateData)
+                .eq("id", value: notification.id)
                 .execute()
             
             if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
-                await MainActor.run {
-                    notifications[index].read = true
-                }
+                var updatedNotification = notification
+                updatedNotification.status = .read
+                notifications[index] = updatedNotification
             }
         } catch {
-            await MainActor.run {
-                self.error = error
-            }
+            self.error = error
         }
     }
     
-    func clearError() {
-        error = nil
+    func deleteNotification(_ notification: UserNotification) async {
+        do {
+            try await supabase
+                .from("notifications")
+                .delete()
+                .eq("id", value: notification.id)
+                .execute()
+            
+            notifications.removeAll { $0.id == notification.id }
+        } catch {
+            self.error = error
+        }
+    }
+    
+    func clearAll() async {
+        do {
+            try await supabase
+                .from("notifications")
+                .delete()
+                .eq("user_id", value: userId)
+                .execute()
+            
+            notifications = []
+        } catch {
+            self.error = error
+        }
     }
 }

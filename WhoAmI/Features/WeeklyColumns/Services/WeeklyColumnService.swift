@@ -3,10 +3,10 @@ import Supabase
 
 protocol WeeklyColumnServiceProtocol {
     func fetchColumns() async throws -> [WeeklyColumn]
-    func fetchQuestions(for columnId: Int) async throws -> [WeeklyQuestion]
-    func submitResponse(_ values: WeeklyResponse) async throws
-    func saveProgress(userId: UUID, columnId: Int, lastQuestionId: Int, completed: Bool) async throws
+    func fetchQuestions(columnId: UUID) async throws -> [WeeklyQuestion]
     func fetchProgress(userId: UUID) async throws -> [UserWeeklyProgress]
+    func submitResponse(_ response: WeeklyResponse) async throws
+    func saveProgress(userId: UUID, columnId: UUID, lastQuestionId: UUID, completed: Bool) async throws
 }
 
 class WeeklyColumnService: WeeklyColumnServiceProtocol {
@@ -17,58 +17,54 @@ class WeeklyColumnService: WeeklyColumnServiceProtocol {
     }
     
     func fetchColumns() async throws -> [WeeklyColumn] {
-        let response: PostgrestResponse<[WeeklyColumn]> = try await supabase.database
-            .from("weeklycolumns")
-            .select("*")
-            .order("publish_date", ascending: false)
+        let response: PostgrestResponse<[WeeklyColumn]> = try await supabase
+            .from("weekly_columns")
+            .select()
+            .order("created_at", ascending: false)
             .execute()
-            
+        
         return response.value
     }
     
-    func fetchQuestions(for columnId: Int) async throws -> [WeeklyQuestion] {
-        let response: PostgrestResponse<[WeeklyQuestion]> = try await supabase.database
-            .from("weeklyquestions")
-            .select("*")
-            .eq("column_id", value: columnId)
+    func fetchQuestions(columnId: UUID) async throws -> [WeeklyQuestion] {
+        let response: PostgrestResponse<[WeeklyQuestion]> = try await supabase
+            .from("weekly_questions")
+            .select()
+            .eq("column_id", value: columnId.uuidString)
+            .order("order_num")
             .execute()
-            
+        
         return response.value
     }
     
-    func submitResponse(_ values: WeeklyResponse) async throws {
-        try await supabase.database
-            .from("weeklyresponses")
-            .insert(values)
+    func fetchProgress(userId: UUID) async throws -> [UserWeeklyProgress] {
+        let response: PostgrestResponse<[UserWeeklyProgress]> = try await supabase
+            .from("user_weekly_progress")
+            .select()
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+        
+        return response.value
+    }
+    
+    func submitResponse(_ response: WeeklyResponse) async throws {
+        let _: PostgrestResponse<WeeklyResponse> = try await supabase
+            .from("weekly_responses")
+            .insert(response)
             .execute()
     }
     
-    func saveProgress(userId: UUID, columnId: Int, lastQuestionId: Int, completed: Bool) async throws {
-        let values = UserWeeklyProgress(
-            id: 0,
+    func saveProgress(userId: UUID, columnId: UUID, lastQuestionId: UUID, completed: Bool) async throws {
+        let progress = UserWeeklyProgress(
             userId: userId,
             columnId: columnId,
             lastQuestionId: lastQuestionId,
             completed: completed
         )
         
-        try await updateProgress(values)
-    }
-    
-    func fetchProgress(userId: UUID) async throws -> [UserWeeklyProgress] {
-        let response: PostgrestResponse<[UserWeeklyProgress]> = try await supabase.database
-            .from("userweeklyprogress")
-            .select("*")
-            .eq("user_id", value: userId.uuidString)
-            .execute()
-            
-        return response.value
-    }
-    
-    func updateProgress(_ values: UserWeeklyProgress) async throws {
-        try await supabase.database
-            .from("userweeklyprogress")
-            .upsert(values)
+        let _: PostgrestResponse<UserWeeklyProgress> = try await supabase
+            .from("user_weekly_progress")
+            .upsert(progress)
             .execute()
     }
-} 
+}

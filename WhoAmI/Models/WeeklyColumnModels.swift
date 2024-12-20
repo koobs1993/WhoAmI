@@ -1,7 +1,7 @@
 import Foundation
 
 public struct WeeklyColumn: Codable, Identifiable {
-    public let id: Int
+    public let id: UUID
     public let title: String
     public let summary: String
     public let content: String
@@ -29,7 +29,8 @@ public struct WeeklyColumn: Codable, Identifiable {
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(Int.self, forKey: .id)
+        let idString = try container.decode(String.self, forKey: .id)
+        id = UUID(uuidString: idString) ?? UUID()
         title = try container.decode(String.self, forKey: .title)
         summary = try container.decode(String.self, forKey: .summary)
         content = try container.decode(String.self, forKey: .content)
@@ -56,7 +57,7 @@ public struct WeeklyColumn: Codable, Identifiable {
     
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
+        try container.encode(id.uuidString, forKey: .id)
         try container.encode(title, forKey: .title)
         try container.encode(summary, forKey: .summary)
         try container.encode(content, forKey: .content)
@@ -77,14 +78,14 @@ public struct WeeklyColumn: Codable, Identifiable {
 }
 
 public struct WeeklyQuestion: Codable, Identifiable {
-    public let id: Int
-    public let columnId: Int
+    public let id: UUID
+    public let columnId: UUID
     public let questionText: String
     public let order: Int
     public let createdAt: Date
     public let updatedAt: Date
     
-    public init(id: Int, columnId: Int, questionText: String, order: Int, createdAt: Date, updatedAt: Date) {
+    public init(id: UUID = UUID(), columnId: UUID, questionText: String, order: Int, createdAt: Date = Date(), updatedAt: Date = Date()) {
         self.id = id
         self.columnId = columnId
         self.questionText = questionText
@@ -104,14 +105,14 @@ public struct WeeklyQuestion: Codable, Identifiable {
 }
 
 public struct WeeklyResponse: Codable, Identifiable {
-    public let id: Int
+    public let id: UUID
     public let userId: UUID
-    public let questionId: Int
+    public let questionId: UUID
     public let response: String
     public let createdAt: Date
     public let updatedAt: Date
     
-    public init(id: Int, userId: UUID, questionId: Int, response: String, createdAt: Date = Date(), updatedAt: Date = Date()) {
+    public init(id: UUID = UUID(), userId: UUID, questionId: UUID, response: String, createdAt: Date = Date(), updatedAt: Date = Date()) {
         self.id = id
         self.userId = userId
         self.questionId = questionId
@@ -131,15 +132,15 @@ public struct WeeklyResponse: Codable, Identifiable {
 }
 
 public struct UserWeeklyProgress: Codable, Identifiable {
-    public let id: Int
+    public let id: UUID
     public let userId: UUID
-    public let columnId: Int
-    public let lastQuestionId: Int
+    public let columnId: UUID
+    public let lastQuestionId: UUID
     public let completed: Bool
     public let createdAt: Date
     public let updatedAt: Date
     
-    public init(id: Int, userId: UUID, columnId: Int, lastQuestionId: Int, completed: Bool, createdAt: Date = Date(), updatedAt: Date = Date()) {
+    public init(id: UUID = UUID(), userId: UUID, columnId: UUID, lastQuestionId: UUID, completed: Bool, createdAt: Date = Date(), updatedAt: Date = Date()) {
         self.id = id
         self.userId = userId
         self.columnId = columnId

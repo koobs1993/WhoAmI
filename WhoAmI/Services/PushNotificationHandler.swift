@@ -1,64 +1,93 @@
 import Foundation
-import UserNotifications
 import Supabase
 #if os(iOS)
 import UIKit
+#else
+import AppKit
 #endif
 
-class PushNotificationHandler: NSObject {
+@MainActor
+class PushNotificationHandler: ObservableObject {
     private let supabase: SupabaseClient
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
-
-    init(supabase: SupabaseClient) {
+    private let userId: UUID
+    
+    @Published var isRegistered = false
+    @Published var error: Error?
+    
+    init(supabase: SupabaseClient, userId: UUID) {
         self.supabase = supabase
-
-        // Configure JSONEncoder
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        self.encoder = encoder
-        
-        // Configure JSONDecoder
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        self.decoder = decoder
-
-        super.init()
-    }
-
-    // ... (rest of your code)
-
-    func registerDevice(token: String, userId: UUID) async throws {
-        let device = UserDevice(
-            id: UUID(),
-            userId: userId,
-            deviceToken: token,
-            platform: "ios",
-            deviceType: "mobile",
-            isActive: true,
-            lastActive: Date(),
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-
-        let jsonData = try encoder.encode(device)
-
-        try await supabase.database
-            .from("user_devices")
-            .upsert(jsonData)
-            .execute()
-    }
-
-    func getDevices(for userId: UUID) async throws -> [UserDevice] {
-        let response: PostgrestResponse = try await supabase.database
-            .from("user_devices")
-            .select()
-            .eq("user_id", value: userId.uuidString)
-            .execute()
-        
-        let devices = try decoder.decode([UserDevice].self, from: response.data)
-        return devices
+        self.userId = userId
     }
     
-    // ... (rest of your code)
+    func registerDevice(token: String) async {
+        do {
+            let deviceName = await getDeviceName()
+            let osVersion = await getOSVersion()
+            let appVersion = await getAppVersion()
+            
+            let device = UserDevice(
+                id: UUID(),
+                userId: userId,
+                name: deviceName,
+                platform: getPlatform(),
+                osVersion: osVersion,
+                appVersion: appVersion,
+                lastActive: Date(),
+                pushToken: token,
+                settings: .default
+            )
+            
+            try await supabase
+                .from("user_devices")
+                .upsert(device)
+                .execute()
+            
+            isRegistered = true
+        } catch {
+            self.error = error
+            isRegistered = false
+        }
+    }
+    
+    func unregisterDevice(token: String) async {
+        do {
+            try await supabase
+                .from("user_devices")
+                .delete()
+                .eq("push_token", value: token)
+                .execute()
+            
+            isRegistered = false
+        } catch {
+            self.error = error
+        }
+    }
+    
+    private func getPlatform() -> DevicePlatform {
+        #if os(iOS)
+        return .iOS
+        #else
+        return .macOS
+        #endif
+    }
+    
+    private func getDeviceName() async -> String {
+        #if os(iOS)
+        return UIDevice.current.name
+        #else
+        return Host.current().localizedName ?? "Unknown Device"
+        #endif
+    }
+    
+    private func getOSVersion() async -> String {
+        #if os(iOS)
+        return UIDevice.current.systemVersion
+        #else
+        return ProcessInfo.processInfo.operatingSystemVersionString
+        #endif
+    }
+    
+    private func getAppVersion() async -> String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
 }
