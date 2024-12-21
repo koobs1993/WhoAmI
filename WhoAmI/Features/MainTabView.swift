@@ -1,7 +1,7 @@
 import SwiftUI
 import Supabase
 
-@available(macOS 12.0, *)
+@available(iOS 16.0, *)
 struct MainTabView: View {
     @EnvironmentObject private var authManager: AuthManager
     
@@ -34,6 +34,7 @@ struct MainTabView: View {
 }
 
 #if DEBUG
+@available(iOS 16.0, *)
 struct MainTabView_Previews: PreviewProvider {
     static var previews: some View {
         MainTabView()

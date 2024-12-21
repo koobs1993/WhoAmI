@@ -1,7 +1,7 @@
 import SwiftUI
 import Supabase
 
-@available(macOS 12.0, *)
+@available(iOS 16.0, *)
 struct AuthView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var viewModel: AuthViewModel
@@ -37,7 +37,7 @@ struct AuthView: View {
 }
 
 #if DEBUG
-@available(macOS 12.0, *)
+@available(iOS 16.0, *)
 struct AuthView_Previews: PreviewProvider {
     static var previews: some View {
         AuthView(supabase: Config.supabaseClient)

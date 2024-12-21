@@ -48,7 +48,7 @@ class ChatSearchViewModel: ObservableObject {
     }
 }
 
-@available(macOS 13.0, iOS 16.0, *)
+@available(iOS 16.0, *)
 struct ChatSearchView: View {
     @StateObject private var viewModel: ChatSearchViewModel
     @EnvironmentObject private var authManager: AuthManager
@@ -109,7 +109,7 @@ struct ChatSearchView: View {
 }
 
 #if DEBUG
-@available(macOS 13.0, iOS 16.0, *)
+@available(iOS 16.0, *)
 struct ChatSearchView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {

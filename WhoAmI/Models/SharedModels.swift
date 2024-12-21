@@ -115,7 +115,6 @@ enum AppTheme: String, Codable, Equatable {
 // MARK: - User Device
 enum DevicePlatform: String, Codable, Equatable {
     case iOS = "ios"
-    case macOS = "macos"
     case web = "web"
 }
 

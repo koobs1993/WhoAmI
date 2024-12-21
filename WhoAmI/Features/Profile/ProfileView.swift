@@ -1,9 +1,5 @@
-#if os(iOS)
-import UIKit
-#elseif os(macOS)
-import AppKit
-#endif
 import SwiftUI
+import UIKit
 import Supabase
 
 struct ProfileView: View {
@@ -194,9 +190,7 @@ struct ProfileView: View {
             }
         }
         .navigationTitle("Profile")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
-        #endif
         .task {
             if viewModel.profile == nil {
                 try? await viewModel.fetchProfile()

@@ -1,7 +1,7 @@
 import SwiftUI
 import Supabase
 
-@available(macOS 13.0, iOS 16.0, *)
+@available(iOS 16.0, *)
 struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
     @EnvironmentObject private var authManager: AuthManager
@@ -108,7 +108,6 @@ struct ChatView: View {
             }
         }
         .navigationTitle("Chat")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -125,28 +124,11 @@ struct ChatView: View {
                 }
             }
         }
-        #else
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Menu {
-                    Button(role: .destructive) {
-                        Task {
-                            await viewModel.clearChat()
-                        }
-                    } label: {
-                        Label("Clear Chat", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-            }
-        }
-        #endif
     }
 }
 
 #if DEBUG
-@available(macOS 13.0, iOS 16.0, *)
+@available(iOS 16.0, *)
 struct ChatView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {

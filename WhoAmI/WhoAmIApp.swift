@@ -1,21 +1,31 @@
-//
-//  WhoAmIApp.swift
-//  WhoAmI
-//
-//  Created by Kyle Kelley on 12/15/24.
-//
-
 import SwiftUI
 import Supabase
+import UIKit
 
 @main
 struct WhoAmIApp: App {
-    @StateObject private var authManager = AuthManager(supabase: Config.supabaseClient)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var authManager: AuthManager
+    
+    init() {
+        let supabase = Config.supabaseClient
+        _authManager = StateObject(wrappedValue: AuthManager(supabase: supabase))
+    }
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(authManager)
+            if authManager.isAuthenticated {
+                MainTabView()
+                    .environmentObject(authManager)
+            } else {
+                AuthView(supabase: Config.supabaseClient)
+                    .environmentObject(authManager)
+            }
         }
     }
+}
+
+// MARK: - Preview
+#Preview {
+    WhoAmIApp()
 }

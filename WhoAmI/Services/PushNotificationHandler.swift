@@ -1,10 +1,6 @@
 import Foundation
 import Supabase
-#if os(iOS)
 import UIKit
-#else
-import AppKit
-#endif
 
 @MainActor
 class PushNotificationHandler: ObservableObject {
@@ -29,7 +25,7 @@ class PushNotificationHandler: ObservableObject {
                 id: UUID(),
                 userId: userId,
                 name: deviceName,
-                platform: getPlatform(),
+                platform: .iOS,
                 osVersion: osVersion,
                 appVersion: appVersion,
                 lastActive: Date(),
@@ -63,28 +59,12 @@ class PushNotificationHandler: ObservableObject {
         }
     }
     
-    private func getPlatform() -> DevicePlatform {
-        #if os(iOS)
-        return .iOS
-        #else
-        return .macOS
-        #endif
-    }
-    
     private func getDeviceName() async -> String {
-        #if os(iOS)
-        return UIDevice.current.name
-        #else
-        return Host.current().localizedName ?? "Unknown Device"
-        #endif
+        UIDevice.current.name
     }
     
     private func getOSVersion() async -> String {
-        #if os(iOS)
-        return UIDevice.current.systemVersion
-        #else
-        return ProcessInfo.processInfo.operatingSystemVersionString
-        #endif
+        UIDevice.current.systemVersion
     }
     
     private func getAppVersion() async -> String {

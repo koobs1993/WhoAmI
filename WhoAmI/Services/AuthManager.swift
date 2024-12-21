@@ -1,7 +1,6 @@
 import Foundation
 import Supabase
 import Auth
-import GoTrue
 
 @MainActor
 class AuthManager: ObservableObject {

@@ -75,7 +75,6 @@ struct DeviceRow: View {
     private var platformIcon: String {
         switch device.platform {
         case .iOS: return "iphone"
-        case .macOS: return "desktopcomputer"
         case .web: return "globe"
         }
     }
@@ -83,17 +82,12 @@ struct DeviceRow: View {
     private var platformColor: Color {
         switch device.platform {
         case .iOS: return .blue
-        case .macOS: return .purple
         case .web: return .green
         }
     }
     
     private var isCurrentDevice: Bool {
-        #if os(macOS)
-        return device.platform == .macOS
-        #else
-        return device.platform == .iOS
-        #endif
+        device.platform == .iOS
     }
     
     private func formatDate(_ date: Date) -> String {

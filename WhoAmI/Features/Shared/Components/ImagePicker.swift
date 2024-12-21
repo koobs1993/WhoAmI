@@ -1,6 +1,4 @@
 import SwiftUI
-
-#if os(iOS)
 import UIKit
 
 struct ImagePicker: UIViewControllerRepresentable {
@@ -39,33 +37,3 @@ struct ImagePicker: UIViewControllerRepresentable {
         }
     }
 }
-
-#elseif os(macOS)
-import AppKit
-
-struct ImagePicker: View {
-    @Binding var image: NSImage?
-    @Environment(\.dismiss) private var dismiss
-    @State private var isShowingFileImporter = false
-    
-    var body: some View {
-        Button("Choose Image") {
-            isShowingFileImporter = true
-        }
-        .fileImporter(
-            isPresented: $isShowingFileImporter,
-            allowedContentTypes: [.image]
-        ) { result in
-            switch result {
-            case .success(let url):
-                if let image = NSImage(contentsOf: url) {
-                    self.image = image
-                }
-            case .failure(let error):
-                print("Error selecting image: \(error.localizedDescription)")
-            }
-            dismiss()
-        }
-    }
-}
-#endif

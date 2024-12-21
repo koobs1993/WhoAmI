@@ -1,0 +1,27 @@
+name: WhoAmI
+options:
+  bundleIdPrefix: com.whoami
+  deploymentTarget:
+    iOS: 15.0
+packages:
+  Supabase:
+    url: https://github.com/supabase-community/supabase-swift.git
+    from: 2.3.1
+  GoTrue:
+    url: https://github.com/supabase-community/gotrue-swift.git
+    from: 1.3.0
+targets:
+  WhoAmI:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.whoami.app
+        DEVELOPMENT_TEAM: ""  # Add your team ID here
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: 1  # iPhone only
+    dependencies:
+      - package: Supabase
+      - package: GoTrue 

@@ -1,7 +1,7 @@
 import SwiftUI
 import Supabase
 
-@available(macOS 12.0, *)
+@available(iOS 16.0, *)
 struct LoginView: View {
     @ObservedObject var viewModel: AuthViewModel
     @State private var isSignUp = false
@@ -40,35 +40,27 @@ struct LoginView: View {
                             TextField("", text: $viewModel.name)
                                 .textFieldStyle(FloatingTextFieldStyle(title: "Full Name", icon: "person.fill"))
                                 .focused($focusedField, equals: .name)
-                                #if os(iOS)
                                 .textContentType(.name)
-                                #endif
                         }
                         
                         TextField("", text: $viewModel.email)
                             .textFieldStyle(FloatingTextFieldStyle(title: "Email", icon: "envelope.fill"))
                             .focused($focusedField, equals: .email)
-                            #if os(iOS)
                             .textContentType(.emailAddress)
                             .autocapitalization(.none)
                             .keyboardType(.emailAddress)
-                            #endif
                             .autocorrectionDisabled()
                         
                         SecureField("", text: $viewModel.password)
                             .textFieldStyle(FloatingTextFieldStyle(title: "Password", icon: "lock.fill"))
                             .focused($focusedField, equals: .password)
-                            #if os(iOS)
                             .textContentType(isSignUp ? .newPassword : .password)
-                            #endif
                         
                         if isSignUp {
                             SecureField("", text: $viewModel.confirmPassword)
                                 .textFieldStyle(FloatingTextFieldStyle(title: "Confirm Password", icon: "lock.fill"))
                                 .focused($focusedField, equals: .confirmPassword)
-                                #if os(iOS)
                                 .textContentType(.newPassword)
-                                #endif
                         }
                     }
                     
@@ -193,11 +185,9 @@ struct ForgotPasswordView: View {
                 
                 TextField("", text: $email)
                     .textFieldStyle(FloatingTextFieldStyle(title: "Email", icon: "envelope.fill"))
-                    #if os(iOS)
                     .textContentType(.emailAddress)
                     .autocapitalization(.none)
                     .keyboardType(.emailAddress)
-                    #endif
                     .autocorrectionDisabled()
                 
                 if let message = message {
@@ -237,9 +227,7 @@ struct ForgotPasswordView: View {
                 Spacer()
             }
             .padding()
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
